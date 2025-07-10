@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "217887995289",
+    "project_id": "safeguardme-b4512",
+    "storage_bucket": "safeguardme-b4512.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:217887995289:android:5c51b3129aa11141860f08",
+        "android_client_info": {
+          "package_name": "com.safeguardme.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCKmiyyJepZCQ3br7W4PsEEA_wbMfyX0E0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
