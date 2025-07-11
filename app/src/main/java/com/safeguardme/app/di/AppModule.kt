@@ -58,7 +58,6 @@ object AppModule {
         userRepository: UserRepository
     ): AuthRepository = AuthRepository(auth, userRepository)
 
-    // ✅ NEW: EmergencyContactRepository
     @Provides
     @Singleton
     fun provideEmergencyContactRepository(

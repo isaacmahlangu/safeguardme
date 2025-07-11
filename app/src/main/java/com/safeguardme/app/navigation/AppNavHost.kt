@@ -1,7 +1,11 @@
-// navigation/AppNavHost.kt - Complete Integration with Onboarding Check
 package com.safeguardme.app.navigation
 
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -12,7 +16,19 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
 import com.safeguardme.app.data.repositories.SettingsRepository
-import com.safeguardme.app.ui.screens.*
+import com.safeguardme.app.ui.components.SafeguardTab
+import com.safeguardme.app.ui.screens.AIAssistanceScreen
+import com.safeguardme.app.ui.screens.EmergencyContactsScreen
+import com.safeguardme.app.ui.screens.ForgotPasswordScreen
+import com.safeguardme.app.ui.screens.IncidentHistoryScreen
+import com.safeguardme.app.ui.screens.IncidentReportScreen
+import com.safeguardme.app.ui.screens.LoginScreen
+import com.safeguardme.app.ui.screens.OnboardingScreen
+import com.safeguardme.app.ui.screens.ProfileScreen
+import com.safeguardme.app.ui.screens.RegisterScreen
+import com.safeguardme.app.ui.screens.SafetyTriggerScreen
+import com.safeguardme.app.ui.screens.SplashScreen
+import com.safeguardme.app.ui.screens.TriggerScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,7 +99,7 @@ fun AppNavHost(
         NavigationState.Loading -> Screen.Splash.route
         NavigationState.Onboarding -> Screen.Onboarding.route
         NavigationState.Authentication -> Screen.Login.route
-        NavigationState.Main -> Screen.Home.route
+        NavigationState.Main -> "main_tabs"
     }
 
     NavHost(
@@ -102,7 +118,7 @@ fun AppNavHost(
                     val destination = when (navigationState) {
                         NavigationState.Onboarding -> Screen.Onboarding.route
                         NavigationState.Authentication -> Screen.Login.route
-                        NavigationState.Main -> Screen.Home.route
+                        NavigationState.Main -> "main_tabs"
                         NavigationState.Loading -> return@LaunchedEffect
                     }
                     navController.navigate(destination) {
@@ -130,10 +146,13 @@ fun AppNavHost(
             ForgotPasswordScreen(navController)
         }
 
-        // Protected Screens (require authentication)
-        composable(Screen.Home.route) {
+        // Main Tab Navigation
+        composable("main_tabs") {
             if (authState) {
-                HomeScreen(navController)
+                SafeguardTabNavigation(
+                    mainNavController = navController,
+                    startTab = SafeguardTab.HOME
+                )
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {
@@ -143,9 +162,10 @@ fun AppNavHost(
             }
         }
 
-        composable(Screen.Contacts.route) {
+        // Individual Screens (accessible from tabs)
+        composable(Screen.Profile.route) {
             if (authState) {
-                ContactsScreen(navController)
+                ProfileScreen(navController)
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {
@@ -179,9 +199,9 @@ fun AppNavHost(
             }
         }
 
-        composable(Screen.SafetyTrigger.route) {
+        composable(Screen.EmergencyContacts.route) {
             if (authState) {
-                SafetyTriggerScreen(navController)
+                EmergencyContactsScreen(navController)
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {
@@ -203,9 +223,9 @@ fun AppNavHost(
             }
         }
 
-        composable(Screen.Profile.route) {
+        composable(Screen.SafetyTrigger.route) {
             if (authState) {
-                ProfileScreen(navController)
+                SafetyTriggerScreen(navController)
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {
@@ -215,8 +235,16 @@ fun AppNavHost(
             }
         }
 
-        composable(Screen.EmergencyContacts.route) {
-            EmergencyContactsScreen(navController)
+        composable(Screen.Trigger.route) {
+            if (authState) {
+                TriggerScreen(navController)
+            } else {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }
         }
     }
 }

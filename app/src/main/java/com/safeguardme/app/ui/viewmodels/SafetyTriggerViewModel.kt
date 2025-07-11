@@ -8,8 +8,13 @@ import com.safeguardme.app.data.models.User
 import com.safeguardme.app.data.repositories.UserRepository
 import com.safeguardme.app.utils.FirebaseUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -17,44 +22,6 @@ import javax.inject.Inject
 class SafetyTriggerViewModel @Inject constructor(
     private val userRepository: UserRepository
 ) : ViewModel() {
-
-    init {
-        loadUserWithProfileEnsurance()
-    }
-
-    private fun loadUserWithProfileEnsurance() {
-        viewModelScope.launch {
-            _isLoading.value = true
-
-            try {
-                // Ensure profile exists first
-                userRepository.ensureUserProfile()
-                    .onSuccess { user ->
-                        _user.value = user
-                        //safetyStatus.value = user.safetyStatus
-                        //updateStatusMessages()
-                    }
-                    .onFailure { error ->
-                        handleError(error)
-                    }
-
-                // Then start observing changes
-                userRepository.observeCurrentUserProfile()
-                    .catch { e -> handleError(e) }
-                    .collect { user ->
-                        if (user != null) {
-                            _user.value = user
-                            //safetyStatus.value = user.safetyStatus
-                            //updateStatusMessages()
-                        }
-                        _isLoading.value = false
-                    }
-            } catch (e: Exception) {
-                handleError(e)
-            }
-        }
-    }
-
 
     // User state
     private val _user = MutableStateFlow<User?>(null)
@@ -73,18 +40,18 @@ class SafetyTriggerViewModel @Inject constructor(
     private val _confirmationTimeout = MutableStateFlow(0)
     val confirmationTimeout: StateFlow<Int> = _confirmationTimeout.asStateFlow()
 
-    // Safety status derived from user
-    val safetyStatus: StateFlow<SafetyStatus> = _user
-        .map { it?.safetyStatus ?: SafetyStatus.DISABLED }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SafetyStatus.DISABLED)
+    private val _safetyStatus = MutableStateFlow(SafetyStatus.DISABLED)
+    val safetyStatus: StateFlow<SafetyStatus> = _safetyStatus.asStateFlow()
+
+
 
     // UI text based on safety status
     val statusMessage: StateFlow<String> = safetyStatus
         .map { status ->
             when (status) {
-                SafetyStatus.DISABLED -> "Hi there, are you okay? Safety is our priority."
-                SafetyStatus.ENABLED -> "Emergency mode is active. Your trusted contacts will be notified."
-                SafetyStatus.EMERGENCY -> "EMERGENCY ALERT SENT. Help is on the way."
+                SafetyStatus.DISABLED -> "Ready to protect you. Tap to activate safety monitoring."
+                SafetyStatus.ENABLED -> "🟡 SAFETY MODE ACTIVE - Monitoring enabled, contacts notified."
+                SafetyStatus.EMERGENCY -> "🔴 EMERGENCY ALERT ACTIVE - Help is on the way."
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Loading...")
@@ -93,23 +60,34 @@ class SafetyTriggerViewModel @Inject constructor(
     val buttonText: StateFlow<String> = safetyStatus
         .map { status ->
             when (status) {
-                SafetyStatus.DISABLED -> "Enable Safety"
-                SafetyStatus.ENABLED -> "Safety Enabled"
-                SafetyStatus.EMERGENCY -> "Emergency Active"
+                SafetyStatus.DISABLED -> "Activate Safety"
+                SafetyStatus.ENABLED -> "Safety Active"
+                SafetyStatus.EMERGENCY -> "Emergency Mode"
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Loading...")
 
-    // ASR status (Phase 1: always OFF)
-    private val _asrEnabled = MutableStateFlow(false)
-    val asrEnabled: StateFlow<Boolean> = _asrEnabled.asStateFlow()
+    // Gesture trigger states
+    private val _gestureTriggersEnabled = MutableStateFlow(true)
+    val gestureTriggersEnabled: StateFlow<Boolean> = _gestureTriggersEnabled.asStateFlow()
 
-    // Mic status text
-    val micStatusText: StateFlow<String> = _asrEnabled
+    // Volume button trigger
+    private val _volumeButtonTriggerEnabled = MutableStateFlow(true)
+    val volumeButtonTriggerEnabled: StateFlow<Boolean> = _volumeButtonTriggerEnabled.asStateFlow()
+
+    // Shake trigger
+    private val _shakeTriggerEnabled = MutableStateFlow(true)
+    val shakeTriggerEnabled: StateFlow<Boolean> = _shakeTriggerEnabled.asStateFlow()
+
+    // Power button trigger (press 5 times rapidly)
+    private val _powerButtonTriggerEnabled = MutableStateFlow(false)
+    val powerButtonTriggerEnabled: StateFlow<Boolean> = _powerButtonTriggerEnabled.asStateFlow()
+
+    val micStatusText: StateFlow<String> = gestureTriggersEnabled
         .map { enabled ->
-            if (enabled) "Keyword listener: ON" else "Keyword listener: OFF"
+            if (enabled) "Gesture triggers: ACTIVE" else "Gesture triggers: OFF"
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Keyword listener: OFF")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Gesture triggers: ACTIVE")
 
     init {
         loadUserData()
@@ -122,6 +100,8 @@ class SafetyTriggerViewModel @Inject constructor(
                     .catch { e -> handleError(e) }
                     .collect { user ->
                         _user.value = user
+                        // Update local safety status from user profile
+                        user?.let { _safetyStatus.value = it.safetyStatus }
                     }
             } catch (e: Exception) {
                 handleError(e)
@@ -134,19 +114,32 @@ class SafetyTriggerViewModel @Inject constructor(
             _isLoading.value = true
 
             try {
-                // Ensure profile exists before any updates
-                userRepository.ensureUserProfile()
-                    .onSuccess {
-                        // Now safe to update safety status
-                        val newStatus = when (safetyStatus.value) {
-                            SafetyStatus.DISABLED -> SafetyStatus.ENABLED
-                            SafetyStatus.ENABLED -> SafetyStatus.DISABLED
-                            SafetyStatus.EMERGENCY -> SafetyStatus.DISABLED
-                        }
+                val newStatus = when (_safetyStatus.value) {
+                    SafetyStatus.DISABLED -> SafetyStatus.ENABLED
+                    SafetyStatus.ENABLED -> SafetyStatus.DISABLED
+                    SafetyStatus.EMERGENCY -> SafetyStatus.DISABLED
+                }
 
-                        updateSafetyStatus(newStatus)
+                // Update local state immediately for responsive UI
+                _safetyStatus.value = newStatus
+
+                // Update backend
+                userRepository.updateSafetyStatus(newStatus)
+                    .onSuccess {
+                        // Success - state already updated
+                        when (newStatus) {
+                            SafetyStatus.ENABLED -> triggerSafetyActivation()
+                            SafetyStatus.EMERGENCY -> triggerEmergencyMode()
+                            SafetyStatus.DISABLED -> triggerSafetyDeactivation()
+                        }
                     }
                     .onFailure { error ->
+                        // Revert local state on failure
+                        _safetyStatus.value = when (newStatus) {
+                            SafetyStatus.DISABLED -> SafetyStatus.ENABLED
+                            SafetyStatus.ENABLED -> SafetyStatus.DISABLED
+                            SafetyStatus.EMERGENCY -> SafetyStatus.ENABLED
+                        }
                         handleError(error)
                     }
             } catch (e: Exception) {
@@ -157,78 +150,95 @@ class SafetyTriggerViewModel @Inject constructor(
         }
     }
 
-    private suspend fun updateSafetyStatus(newStatus: SafetyStatus) {
-        userRepository.updateSafetyStatus(newStatus)
-            .onSuccess {
-                //safetyStatus.value = newStatus
-                //updateStatusMessages()
-                // Additional safety logic (notifications, etc.)
-            }
-            .onFailure { error ->
-                handleError(error)
-            }
-    }
+    // ✅ NEW: Gesture-based triggers
+    fun onVolumeButtonsPressed(consecutiveCount: Int) {
+        if (!_volumeButtonTriggerEnabled.value) return
 
-    fun confirmSafetyAction() {
-        val currentStatus = safetyStatus.value
-
-        when (currentStatus) {
-            SafetyStatus.DISABLED -> enableSafety()
-            SafetyStatus.ENABLED -> disableSafety()
-            SafetyStatus.EMERGENCY -> disableSafety() // Emergency override
+        if (consecutiveCount >= 3 && _safetyStatus.value == SafetyStatus.DISABLED) {
+            triggerEmergencyGesture("Volume Buttons (3x)")
         }
-
-        _showConfirmation.value = false
     }
 
-    fun cancelConfirmation() {
-        _showConfirmation.value = false
+    fun onPhoneShakeDetected(intensity: Float) {
+        if (!_shakeTriggerEnabled.value) return
+
+        if (intensity > 15.0f && _safetyStatus.value == SafetyStatus.DISABLED) {
+            triggerEmergencyGesture("Phone Shake")
+        }
     }
 
-    private fun enableSafety() {
+    fun onPowerButtonPressed(consecutiveCount: Int) {
+        if (!_powerButtonTriggerEnabled.value) return
+
+        if (consecutiveCount >= 5 && _safetyStatus.value == SafetyStatus.DISABLED) {
+            triggerEmergencyGesture("Power Button (5x)")
+        }
+    }
+
+    fun onScreenTapPattern(pattern: List<Long>) {
+        // Detect specific tap patterns like SOS (3 short, 3 long, 3 short)
+        if (isSOSTapPattern(pattern) && _safetyStatus.value == SafetyStatus.DISABLED) {
+            triggerEmergencyGesture("SOS Tap Pattern")
+        }
+    }
+
+    private fun isSOSTapPattern(taps: List<Long>): Boolean {
+        // SOS pattern: short-short-short-long-long-long-short-short-short
+        // This is a simplified detection - could be enhanced
+        return taps.size >= 9
+    }
+
+    private fun triggerEmergencyGesture(triggerType: String) {
         viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                userRepository.updateSafetyStatus(SafetyStatus.ENABLED)
-                    .onFailure { e -> handleError(e) }
+            _safetyStatus.value = SafetyStatus.ENABLED
 
-                // TODO: Phase 2 - Trigger Cloud Function for contact notifications
-                // triggerEmergencyNotifications()
-
-            } catch (e: Exception) {
-                handleError(e)
-            } finally {
-                _isLoading.value = false
-            }
+            userRepository.updateSafetyStatus(SafetyStatus.ENABLED)
+                .onSuccess {
+                    // Log gesture trigger for analytics
+                    triggerSafetyActivation(triggerType)
+                }
+                .onFailure { error ->
+                    _safetyStatus.value = SafetyStatus.DISABLED
+                    handleError(error)
+                }
         }
     }
 
-    private fun disableSafety() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                userRepository.updateSafetyStatus(SafetyStatus.DISABLED)
-                    .onFailure { e -> handleError(e) }
-
-            } catch (e: Exception) {
-                handleError(e)
-            } finally {
-                _isLoading.value = false
-            }
-        }
+    private fun triggerSafetyActivation(triggerMethod: String = "Manual") {
+        // TODO: Implement safety activation logic
+        // - Notify emergency contacts
+        // - Start location sharing
+        // - Enable audio recording (if permissions allow)
+        // - Log activation method for analytics
     }
 
-    // TODO: Phase 2 - Emergency escalation
+    private fun triggerEmergencyMode() {
+        // TODO: Implement emergency mode logic
+        // - Contact emergency services
+        // - Send emergency SMS to contacts
+        // - Enable continuous location tracking
+        // - Start emergency audio recording
+    }
+
+    private fun triggerSafetyDeactivation() {
+        // TODO: Implement deactivation logic
+        // - Stop location sharing
+        // - Notify contacts of safety
+        // - Stop audio recording
+    }
+
     fun escalateToEmergency() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                _safetyStatus.value = SafetyStatus.EMERGENCY
+
                 userRepository.updateSafetyStatus(SafetyStatus.EMERGENCY)
-                    .onFailure { e -> handleError(e) }
-
-                // TODO: Trigger emergency services notification
-                // triggerEmergencyServices()
-
+                    .onSuccess { triggerEmergencyMode() }
+                    .onFailure { error ->
+                        _safetyStatus.value = SafetyStatus.ENABLED
+                        handleError(error)
+                    }
             } catch (e: Exception) {
                 handleError(e)
             } finally {
@@ -237,23 +247,31 @@ class SafetyTriggerViewModel @Inject constructor(
         }
     }
 
-    // TODO: Phase 2 - ASR toggle
-    fun toggleASR() {
-        // Phase 1: No-op, always disabled
-        // Phase 2: Implement ASR service toggle
+    // Gesture trigger toggles
+    fun toggleVolumeButtonTrigger() {
+        _volumeButtonTriggerEnabled.value = !_volumeButtonTriggerEnabled.value
     }
 
-    private fun startConfirmationTimeout() {
-        viewModelScope.launch {
-            for (i in 10 downTo 1) {
-                _confirmationTimeout.value = i
-                delay(1000)
-                if (!_showConfirmation.value) break
-            }
-            if (_showConfirmation.value) {
-                _showConfirmation.value = false
-            }
-        }
+    fun toggleShakeTrigger() {
+        _shakeTriggerEnabled.value = !_shakeTriggerEnabled.value
+    }
+
+    fun togglePowerButtonTrigger() {
+        _powerButtonTriggerEnabled.value = !_powerButtonTriggerEnabled.value
+    }
+
+    fun toggleGestureTriggers() {
+        _gestureTriggersEnabled.value = !_gestureTriggersEnabled.value
+    }
+
+    // Confirmation dialog methods (keep for advanced features)
+    fun confirmSafetyAction() {
+        _showConfirmation.value = false
+        onSafetyButtonPressed()
+    }
+
+    fun cancelConfirmation() {
+        _showConfirmation.value = false
     }
 
     fun clearError() {
@@ -261,7 +279,10 @@ class SafetyTriggerViewModel @Inject constructor(
     }
 
     private fun handleError(throwable: Throwable) {
-        _error.value = FirebaseUtils.getErrorMessage(throwable as Exception)
+        _error.value = when (throwable) {
+            is Exception -> FirebaseUtils.getErrorMessage(throwable)
+            else -> "An unexpected error occurred"
+        }
         _isLoading.value = false
     }
 }

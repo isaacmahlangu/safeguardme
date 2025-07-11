@@ -1,6 +1,16 @@
 // ui/screens/HomeScreen.kt
 package com.safeguardme.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
@@ -21,14 +32,21 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Emergency
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VoiceChat
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,9 +58,11 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,9 +75,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -69,19 +92,25 @@ import com.safeguardme.app.navigation.Screen
 import com.safeguardme.app.ui.viewmodels.EmergencyContactViewModel
 import com.safeguardme.app.ui.viewmodels.HomeUiState
 import com.safeguardme.app.ui.viewmodels.HomeViewModel
+import com.safeguardme.app.ui.viewmodels.TriggerViewModel
 import com.safeguardme.app.ui.viewmodels.firstName
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = hiltViewModel(),
-    emergencyViewModel: EmergencyContactViewModel = hiltViewModel()
+    emergencyViewModel: EmergencyContactViewModel = hiltViewModel(),
+    triggerViewModel: TriggerViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val emergencyContacts by emergencyViewModel.emergencyReadyContacts.collectAsState()
+
+    // Trigger setup state
+    var showTriggerSetup by remember { mutableStateOf(false) }
 
     // Memoized navigation actions
     val navigationActions = remember(navController) {
@@ -93,7 +122,8 @@ fun HomeScreen(
         HomeUiHandlers(
             onToggleSafety = viewModel::toggleSafetyStatus,
             onClearError = viewModel::clearError,
-            onRefresh = viewModel::refresh
+            onRefresh = viewModel::refresh,
+            onToggleTriggerSetup = { showTriggerSetup = !showTriggerSetup }
         )
     }
 
@@ -101,7 +131,9 @@ fun HomeScreen(
         uiState = uiState,
         emergencyContactsCount = emergencyContacts.size,
         navigationActions = navigationActions,
-        uiHandlers = uiHandlers
+        uiHandlers = uiHandlers,
+        showTriggerSetup = showTriggerSetup,
+        triggerViewModel = triggerViewModel
     )
 
     // Handle refresh trigger
@@ -117,7 +149,9 @@ private fun HomeContent(
     uiState: HomeUiState,
     emergencyContactsCount: Int,
     navigationActions: HomeNavigationActions,
-    uiHandlers: HomeUiHandlers
+    uiHandlers: HomeUiHandlers,
+    showTriggerSetup: Boolean,
+    triggerViewModel: TriggerViewModel
 ) {
     LazyColumn(
         modifier = Modifier
@@ -142,8 +176,24 @@ private fun HomeContent(
         item {
             QuickActionsSection(
                 safetyStatus = uiState.safetyStatus,
-                navigationActions = navigationActions
+                navigationActions = navigationActions,
+                onToggleTriggerSetup = uiHandlers.onToggleTriggerSetup,
+                showTriggerSetup = showTriggerSetup
             )
+        }
+
+        // Voice Trigger Setup Section
+        item {
+            AnimatedVisibility(
+                visible = showTriggerSetup,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                VoiceTriggerSetupCard(
+                    triggerViewModel = triggerViewModel,
+                    onDismiss = { uiHandlers.onToggleTriggerSetup() }
+                )
+            }
         }
 
         item {
@@ -176,6 +226,365 @@ private fun HomeContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun VoiceTriggerSetupCard(
+    triggerViewModel: TriggerViewModel,
+    onDismiss: () -> Unit
+) {
+    // Form states
+    val keyword by triggerViewModel.keyword.collectAsState()
+    val keywordError by triggerViewModel.keywordError.collectAsState()
+
+    // Recording states
+    val isRecording by triggerViewModel.isRecording.collectAsState()
+    val recordingTime by triggerViewModel.recordingTime.collectAsState()
+    val amplitude by triggerViewModel.amplitude.collectAsState()
+    val hasRecording by triggerViewModel.hasRecording.collectAsState()
+
+    // Playback states
+    val isPlaying by triggerViewModel.isPlaying.collectAsState()
+
+    // Save states
+    val isSaving by triggerViewModel.isSaving.collectAsState()
+    val canSave by triggerViewModel.canSave.collectAsState()
+
+    // Detection status
+    val detectionEnabled by triggerViewModel.detectionEnabled.collectAsState()
+
+    // UI states
+    val error by triggerViewModel.error.collectAsState()
+    val successMessage by triggerViewModel.successMessage.collectAsState()
+
+    // Animations
+    val recordButtonScale by animateFloatAsState(
+        targetValue = if (isRecording) 1.2f else 1f,
+        animationSpec = tween(200), label = "record_scale"
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VoiceChat,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Voice Trigger Setup",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.ExpandLess, contentDescription = "Collapse")
+                }
+            }
+
+            // Detection Status
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = if (detectionEnabled)
+                    MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (detectionEnabled) Icons.Default.Mic else Icons.Default.MicOff,
+                        contentDescription = null,
+                        tint = if (detectionEnabled)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Detection: ${if (detectionEnabled) "ON" else "OFF"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (detectionEnabled)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Keyword Input
+            OutlinedTextField(
+                value = keyword,
+                onValueChange = triggerViewModel::updateKeyword,
+                label = { Text("Secret Keyword") },
+                placeholder = { Text("e.g., Safeguard, Phoenix") },
+                isError = keywordError != null,
+                supportingText = keywordError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                leadingIcon = {
+                    Icon(Icons.Default.Key, contentDescription = null)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isRecording && !isSaving
+            )
+
+            // Recording Section
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Voice Sample",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    if (!isRecording && !hasRecording) {
+                        Text(
+                            text = "Record yourself saying your keyword clearly",
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Waveform or Recording Status
+                    if (isRecording) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            WaveformVisualizer(
+                                amplitude = amplitude,
+                                isActive = isRecording,
+                                modifier = Modifier.height(40.dp)
+                            )
+                            Text(
+                                text = "Recording... ${recordingTime}s / 5s",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else if (hasRecording) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color.Green,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Recording complete (${recordingTime}s)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Green
+                            )
+                        }
+                    }
+
+                    // Recording Controls
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Record Button
+                        FloatingActionButton(
+                            onClick = {
+                                if (isRecording) {
+                                    triggerViewModel.stopRecording()
+                                } else {
+                                    triggerViewModel.startRecording()
+                                }
+                            },
+                            modifier = Modifier
+                                .scale(recordButtonScale)
+                                .size(48.dp),
+                            containerColor = if (isRecording)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.primary
+                        ) {
+                            Icon(
+                                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = if (isRecording) "Stop recording" else "Start recording",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Playback Button
+                        if (hasRecording) {
+                            IconButton(
+                                onClick = { triggerViewModel.playRecording() },
+                                enabled = !isRecording
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Stop playback" else "Play recording",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        // Delete Button
+                        if (hasRecording) {
+                            IconButton(
+                                onClick = { triggerViewModel.deleteRecording() },
+                                enabled = !isRecording && !isPlaying
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete recording",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save Button
+            Button(
+                onClick = { triggerViewModel.saveKeywordAndSample() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = canSave
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (isSaving) "Saving..." else "Save Voice Trigger"
+                )
+            }
+
+            // Success/Error Messages
+            successMessage?.let { message ->
+                LaunchedEffect(message) {
+                    kotlinx.coroutines.delay(3000)
+                    triggerViewModel.clearSuccessMessage()
+                    onDismiss()
+                }
+
+                Surface(
+                    color = Color.Green.copy(alpha = 0.1f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = message,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Green
+                    )
+                }
+            }
+
+            error?.let { errorMessage ->
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { triggerViewModel.clearError() }
+                        ) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WaveformVisualizer(
+    amplitude: Int,
+    isActive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+    val animatedAmplitude by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ), label = "amplitude"
+    )
+
+    Canvas(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        drawWaveform(
+            amplitude = if (isActive) amplitude.toFloat() else 0f,
+            animatedAmplitude = animatedAmplitude,
+            color = androidx.compose.ui.graphics.Color.Blue
+        )
+    }
+}
+
+private fun DrawScope.drawWaveform(
+    amplitude: Float,
+    animatedAmplitude: Float,
+    color: androidx.compose.ui.graphics.Color
+) {
+    val width = size.width
+    val height = size.height
+    val centerY = height / 2
+    val barCount = 15
+    val barWidth = width / barCount / 2
+
+    for (i in 0 until barCount) {
+        val x = (i * width / barCount) + barWidth / 2
+        val normalizedAmplitude = (amplitude / 1000f).coerceIn(0f, 1f)
+        val waveHeight = (sin(i * 0.5f + animatedAmplitude * 10) * normalizedAmplitude * height / 3).coerceAtLeast(4f)
+
+        drawRect(
+            color = color,
+            topLeft = androidx.compose.ui.geometry.Offset(x - barWidth / 2, centerY - waveHeight / 2),
+            size = androidx.compose.ui.geometry.Size(barWidth, waveHeight)
+        )
     }
 }
 
@@ -331,7 +740,9 @@ private fun SafetyStatusCard(
 @Composable
 private fun QuickActionsSection(
     safetyStatus: SafetyStatus,
-    navigationActions: HomeNavigationActions
+    navigationActions: HomeNavigationActions,
+    onToggleTriggerSetup: () -> Unit,
+    showTriggerSetup: Boolean
 ) {
     Text(
         text = "Quick Actions",
@@ -367,9 +778,9 @@ private fun QuickActionsSection(
             onClick = { navigationActions.navigateToIncidentHistory() },
             modifier = Modifier.weight(1f)
         )
-        SafetyToggleButton(
-            safetyStatus = safetyStatus,
-            onClick = { navigationActions.navigateToSafetyTrigger() },
+        VoiceTriggerToggleButton(
+            onClick = onToggleTriggerSetup,
+            isExpanded = showTriggerSetup,
             modifier = Modifier.weight(1f)
         )
     }
@@ -397,20 +808,18 @@ private fun QuickActionButton(
 }
 
 @Composable
-private fun SafetyToggleButton(
-    safetyStatus: SafetyStatus,
+private fun VoiceTriggerToggleButton(
     onClick: () -> Unit,
+    isExpanded: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val isEnabled = safetyStatus == SafetyStatus.ENABLED
-
     FilledTonalButton(
         onClick = onClick,
         modifier = modifier,
         colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = if (isEnabled)
-                MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.primaryContainer
+            containerColor = if (isExpanded)
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Column(
@@ -418,10 +827,10 @@ private fun SafetyToggleButton(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(
-                imageVector = if (isEnabled) Icons.Default.Warning else Icons.Default.Security,
+                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.VoiceChat,
                 contentDescription = null
             )
-            Text("Safety", textAlign = TextAlign.Center)
+            Text("Voice Setup", textAlign = TextAlign.Center)
         }
     }
 }
@@ -731,7 +1140,6 @@ private class HomeNavigationActions(private val navController: NavController) {
     fun navigateToIncidentHistory() = navController.navigate(Screen.IncidentHistory.route)
     fun navigateToContacts() = navController.navigate(Screen.Contacts.route)
     fun navigateToIncidentReport() = navController.navigate(Screen.IncidentReport.route)
-    fun navigateToSafetyTrigger() = navController.navigate(Screen.SafetyTrigger.route)
     fun navigateToEmergencyContacts() = navController.navigate(Screen.EmergencyContacts.route)
     fun navigateToAIAssistant() = navController.navigate(Screen.AIAssistant.route)
     fun signOut() {
@@ -745,5 +1153,6 @@ private class HomeNavigationActions(private val navController: NavController) {
 private class HomeUiHandlers(
     val onToggleSafety: () -> Unit,
     val onClearError: () -> Unit,
-    val onRefresh: () -> Unit
+    val onRefresh: () -> Unit,
+    val onToggleTriggerSetup: () -> Unit
 )

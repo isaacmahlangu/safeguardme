@@ -9,12 +9,47 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Emergency
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -45,6 +80,11 @@ fun SafetyTriggerScreen(
     val statusMessage by viewModel.statusMessage.collectAsState()
     val buttonText by viewModel.buttonText.collectAsState()
     val micStatusText by viewModel.micStatusText.collectAsState()
+    val volumeButtonTriggerEnabled by viewModel.volumeButtonTriggerEnabled.collectAsState()
+    val shakeTriggerEnabled by viewModel.shakeTriggerEnabled.collectAsState()
+    val powerButtonTriggerEnabled by viewModel.powerButtonTriggerEnabled.collectAsState()
+
+
 
     // Animation states
     val buttonScale by animateFloatAsState(
@@ -198,6 +238,17 @@ fun SafetyTriggerScreen(
                 fontWeight = if (safetyStatus != SafetyStatus.DISABLED) FontWeight.SemiBold else FontWeight.Normal
             )
 
+            if (safetyStatus == SafetyStatus.DISABLED) {
+                GestureTriggersCard(
+                    volumeEnabled = volumeButtonTriggerEnabled,
+                    shakeEnabled = shakeTriggerEnabled,
+                    powerEnabled = powerButtonTriggerEnabled,
+                    onVolumeToggle = viewModel::toggleVolumeButtonTrigger,
+                    onShakeToggle = viewModel::toggleShakeTrigger,
+                    onPowerToggle = viewModel::togglePowerButtonTrigger
+                )
+            }
+
             // Emergency Escalation Button (only when safety enabled)
             if (safetyStatus == SafetyStatus.ENABLED) {
                 OutlinedButton(
@@ -324,6 +375,107 @@ private fun ConfirmationDialog(
             }
         }
     )
+}
+
+@Composable
+private fun GestureTriggersCard(
+    volumeEnabled: Boolean,
+    shakeEnabled: Boolean,
+    powerEnabled: Boolean,
+    onVolumeToggle: () -> Unit,
+    onShakeToggle: () -> Unit,
+    onPowerToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "🎭 Gesture Triggers",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Trigger safety mode discreetly using phone gestures",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            GestureTriggerItem(
+                icon = "🔊",
+                title = "Volume Buttons",
+                description = "Press volume up/down 3 times rapidly",
+                enabled = volumeEnabled,
+                onToggle = onVolumeToggle
+            )
+
+            GestureTriggerItem(
+                icon = "📳",
+                title = "Phone Shake",
+                description = "Shake phone vigorously for 2 seconds",
+                enabled = shakeEnabled,
+                onToggle = onShakeToggle
+            )
+
+            GestureTriggerItem(
+                icon = "⚡",
+                title = "Power Button",
+                description = "Press power button 5 times quickly",
+                enabled = powerEnabled,
+                onToggle = onPowerToggle
+            )
+        }
+    }
+}
+
+@Composable
+private fun GestureTriggerItem(
+    icon: String,
+    title: String,
+    description: String,
+    enabled: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = icon,
+                style = MaterialTheme.typography.headlineSmall
+            )
+
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = { onToggle() }
+        )
+    }
 }
 
 private fun performHapticFeedback(context: Context, strong: Boolean = false) {

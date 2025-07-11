@@ -42,6 +42,13 @@ data class EmergencyContact(
         const val MAX_CONTACTS_PER_USER = 10
         const val MIN_HIGH_PRIORITY_CONTACTS = 2
 
+        val EMERGENCY_SHORT_CODES = setOf(
+            "911", "112", "999", "000",  // Emergency services
+            "741741", "85258", "686868", // Crisis text lines
+            "211", "311", "411", "511",  // Information services
+            "988", "1-800-273-8255"      // Suicide prevention
+        )
+
         // Default relationships for safety scenarios
         val COMMON_RELATIONSHIPS = listOf(
             "Family Member", "Close Friend", "Partner/Spouse", "Neighbor",
@@ -163,13 +170,32 @@ data class EmergencyContact(
         // Remove all non-digit characters except + for international numbers
         val cleanPhone = phone.replace(Regex("[^+\\d]"), "")
 
+        // Check if it's a known emergency short code
+        if (EMERGENCY_SHORT_CODES.contains(cleanPhone) || EMERGENCY_SHORT_CODES.contains(phone)) {
+            return true
+        }
+
+        // Check for special crisis text line formats
+        if (cleanPhone == "741741" || phone == "741741") {
+            return true
+        }
+
         return when {
             // International format (+1234567890)
             cleanPhone.startsWith("+") -> {
                 val digits = cleanPhone.substring(1)
                 digits.length in 7..15 && digits.all { it.isDigit() }
             }
-            // Domestic format (various lengths depending on country)
+            // Emergency short codes (3-6 digits)
+            cleanPhone.length in 3..6 -> {
+                cleanPhone.all { it.isDigit() } && (
+                        // Standard emergency codes
+                        cleanPhone in listOf("911", "112", "999", "000", "211", "311", "411", "511", "988") ||
+                                // Crisis text lines (typically 5-6 digits)
+                                (cleanPhone.length in 5..6 && cleanPhone.all { it.isDigit() })
+                        )
+            }
+            // Standard domestic format (7-15 digits)
             else -> {
                 cleanPhone.length in 7..15 && cleanPhone.all { it.isDigit() }
             }
@@ -185,6 +211,8 @@ data class EmergencyContact(
         val digits = phone.replace(Regex("[^+\\d]"), "")
 
         return when {
+            // Known short codes - display as-is
+            EMERGENCY_SHORT_CODES.contains(digits) || digits.length <= 6 -> digits
             // International number
             digits.startsWith("+") -> digits
             // US/Canada number (10 digits)
@@ -199,6 +227,7 @@ data class EmergencyContact(
             else -> digits
         }
     }
+
 }
 
 // =============================================
