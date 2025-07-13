@@ -2,6 +2,13 @@
 
 **SafeguardMe** is a modern, AI-assisted personal safety app designed for real-time crisis response, emergency contact coordination, and AI-powered protection. Built with Kotlin and Jetpack Compose, powered by Firebase and ML Kit, SafeguardMe empowers users with tools to document, report, and respond to safety incidents swiftly and intelligently.
 
+Authors: 
+Chidi MT
+Mahlangu I
+Matshehla TM
+Makuwa RL
+Lebea N
+
 ---
 
 ## 📱 Features
