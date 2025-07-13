@@ -76,6 +76,7 @@ All sensitive screens support future enhancements like biometric authentication.
 - Kotlin 1.9+
 - Java 17
 - Firebase Project with Authentication + Firestore + Storage enabled
+- 
 
 ### 🔨 Setup Steps
 
