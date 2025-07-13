@@ -1,8 +1,7 @@
-// data/repositories/UserRepository.kt
-
-
+// data/repositories/UserRepository.kt - FIXED with Safe Deserialization
 package com.safeguardme.app.data.repositories
 
+import android.content.ContentValues.TAG
 import android.util.Log
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -12,15 +11,15 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.ktx.snapshots
 import com.safeguardme.app.data.models.SafetyStatus
 import com.safeguardme.app.data.models.User
+import com.safeguardme.app.utils.AppConstants.USERS_COLLECTION
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
-
-
 
 @Singleton
 class UserRepository @Inject constructor(
@@ -31,8 +30,112 @@ class UserRepository @Inject constructor(
     private val usersCollection = firestore.collection("users")
     private val _currentUserFlow = MutableStateFlow<User?>(null)
 
+    /**
+     * ✅ CRITICAL FIX: Safe user deserialization that handles timestamp conversion issues
+     */
+    private fun safeDeserializeUser(documentData: Map<String, Any>?, documentId: String): User? {
+        return try {
+            if (documentData == null) {
+                Log.w(TAG, "Document data is null for user: $documentId")
+                return null
+            }
 
+            // ✅ NEW: Manual deserialization to handle timestamp issues
+            val user = User(
+                uid = documentData["uid"] as? String ?: documentId,
+                email = documentData["email"] as? String ?: "",
+                fullName = documentData["fullName"] as? String ?: "",
+                phoneNumber = documentData["phoneNumber"] as? String ?: "",
+                profilePhotoUrl = documentData["profilePhotoUrl"] as? String,
+                isEmailVerified = documentData["isEmailVerified"] as? Boolean ?: false,
+                emailVerified = documentData["emailVerified"] as? Boolean ?: false,
+                lastLoginAt = documentData["lastLoginAt"] as? Long ?: 0L,
+                isActive = documentData["isActive"] as? Boolean ?: true,
+                valid = documentData["valid"] as? Boolean ?: true,
 
+                triggerKeyword = documentData["triggerKeyword"] as? String,
+                voiceAudioUrl = documentData["voiceAudioUrl"] as? String,
+                transcriptionData = documentData["transcriptionData"] as? Map<String, Any>,
+                triggerUpdatedAt = documentData["triggerUpdatedAt"] as? Long,
+                triggerDeletedAt = documentData["triggerDeletedAt"] as? Long,
+                audioFileSize = documentData["audioFileSize"] as? Long,
+                profileSecurityLevel = documentData["profileSecurityLevel"] as? String,
+
+                // ✅ CRITICAL: Safe timestamp handling
+                createdAt = safeExtractTimestamp(documentData["createdAt"]),
+                lastActiveAt = safeExtractTimestamp(documentData["lastActiveAt"]),
+
+                // ✅ SAFE: Handle enum conversion
+                safetyStatus = try {
+                    val statusString = documentData["safetyStatus"] as? String
+                    if (statusString != null) {
+                        SafetyStatus.valueOf(statusString)
+                    } else {
+                        SafetyStatus.DISABLED
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Invalid safety status, using default", e)
+                    SafetyStatus.DISABLED
+                },
+
+                emergencyContacts = (documentData["emergencyContacts"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                isProfileComplete = documentData["isProfileComplete"] as? Boolean ?: false,
+                hasCompletedOnboarding = documentData["hasCompletedOnboarding"] as? Boolean ?: false,
+
+                // ✅ SAFE: Handle nested objects with defaults
+                notificationPreferences = documentData["notificationPreferences"]?.let {
+                    // Handle notification preferences safely
+                    com.safeguardme.app.data.models.NotificationPreferences()
+                } ?: com.safeguardme.app.data.models.NotificationPreferences(),
+
+                emergencySettings = documentData["emergencySettings"]?.let {
+                    // Handle emergency settings safely
+                    com.safeguardme.app.data.models.EmergencySettings()
+                } ?: com.safeguardme.app.data.models.EmergencySettings()
+            )
+
+            Log.d(TAG, "✅ Successfully deserialized user: ${user.email}")
+            user
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to deserialize user document: $documentId", e)
+
+            // ✅ FALLBACK: Return minimal user object to prevent total failure
+            try {
+                User(
+                    uid = documentId,
+                    email = documentData?.get("email") as? String ?: "",
+                    fullName = documentData?.get("fullName") as? String ?: "",
+                    createdAt = System.currentTimeMillis(),
+                    lastActiveAt = System.currentTimeMillis(),
+                    valid = true
+                )
+            } catch (fallbackError: Exception) {
+                Log.e(TAG, "❌ Even fallback user creation failed", fallbackError)
+                null
+            }
+        }
+    }
+
+    /**
+     * ✅ NEW: Safe timestamp extraction that handles both Long and Timestamp
+     */
+    private fun safeExtractTimestamp(value: Any?): Any? {
+        return when (value) {
+            is Timestamp -> value
+            is Long -> value
+            is Number -> value.toLong()
+            null -> System.currentTimeMillis() // Default to current time
+            else -> {
+                Log.w(TAG, "Unknown timestamp type: ${value::class.java}, using current time")
+                System.currentTimeMillis()
+            }
+        }
+    }
+
+    /**
+     * ✅ FIXED: Safe user profile creation with better error handling
+     */
     private suspend fun createUserProfileFromAuth(firebaseUser: FirebaseUser): Result<User> = try {
         val user = User(
             uid = firebaseUser.uid,
@@ -41,11 +144,17 @@ class UserRepository @Inject constructor(
             phoneNumber = "", // Will be updated later
             profilePhotoUrl = firebaseUser.photoUrl?.toString(),
             isEmailVerified = firebaseUser.isEmailVerified,
+            emailVerified = firebaseUser.isEmailVerified, // Sync both fields
 
             // Safety-specific defaults
-            safetyStatus = com.safeguardme.app.data.models.SafetyStatus.DISABLED,
+            safetyStatus = SafetyStatus.DISABLED,
             emergencyContacts = emptyList(),
             triggerKeyword = "help me", // Default keyword
+
+            // ✅ FIXED: Use consistent timestamp format
+            createdAt = System.currentTimeMillis(),
+            lastActiveAt = System.currentTimeMillis(),
+            valid = true
         ).sanitized()
 
         // Use set() to guarantee creation
@@ -53,9 +162,13 @@ class UserRepository @Inject constructor(
             .set(user)
             .await()
 
-        // Fetch the document to get the server-generated timestamps
+        // ✅ IMPROVED: Safe document retrieval
         val createdDoc = usersCollection.document(user.uid).get().await()
-        val createdUser = createdDoc.toObject(User::class.java)
+        val createdUser = if (createdDoc.exists()) {
+            safeDeserializeUser(createdDoc.data, createdDoc.id)
+        } else {
+            null
+        }
 
         if (createdUser != null) {
             _currentUserFlow.value = createdUser
@@ -69,36 +182,208 @@ class UserRepository @Inject constructor(
         Result.failure(SecurityException("Failed to create user profile: ${e.message}"))
     }
 
+    /**
+     * ✅ CRITICAL FIX: Safe user profile retrieval with fallback handling
+     */
     suspend fun ensureUserProfile(): Result<User> = try {
-        val currentUser = auth.currentUser ?: return Result.failure(
-            SecurityException("No authenticated user")
-        )
+        val currentUser = auth.currentUser
+            ?: return Result.failure(SecurityException("User must be authenticated"))
 
-        val uid = currentUser.uid
-        val userDocRef = usersCollection.document(uid)
-        val userDoc = userDocRef.get().await()
+        val userId = currentUser.uid
+        val email = currentUser.email ?: ""
+        val displayName = currentUser.displayName ?: ""
 
-        if (userDoc.exists()) {
-            // Profile exists, return it
-            val user = userDoc.toObject(User::class.java)
-            if (user != null && user.isValid()) {
+        Log.d(TAG, "🔍 Ensuring user profile for: $email")
+
+        // Check if profile exists
+        val existingDoc = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .get()
+            .await()
+
+        if (existingDoc.exists()) {
+            // ✅ CRITICAL: Use safe deserialization
+            val user = safeDeserializeUser(existingDoc.data, existingDoc.id)
+
+            if (user != null) {
+                Log.d(TAG, "✅ User profile found: ${user.email}")
                 _currentUserFlow.value = user
-                Result.success(user)
+                Result.success(user.copy(uid = userId))
             } else {
-                // Document exists but is malformed, recreate
-                Log.w("UserRepository", "User document malformed, recreating...")
-                createUserProfileFromAuth(currentUser)
+                Log.w(TAG, "⚠️ User document exists but deserialization failed, creating new profile")
+                // Create new profile if deserialization failed
+                createNewUserProfile(userId, email, displayName)
             }
         } else {
-            // Profile doesn't exist, create it
-            Log.i("UserRepository", "User profile doesn't exist, creating...")
-            createUserProfileFromAuth(currentUser)
+            Log.d(TAG, "🆕 User profile not found, creating new profile")
+            // Create new profile
+            createNewUserProfile(userId, email, displayName)
         }
+
     } catch (e: Exception) {
-        Log.e("UserRepository", "❌ Failed to ensure user profile", e)
-        Result.failure(SecurityException("Failed to ensure user profile: ${e.message}"))
+        Log.e(TAG, "❌ Failed to ensure user profile", e)
+
+        // ✅ EMERGENCY FALLBACK: Try to create minimal profile
+        try {
+            val currentUser = auth.currentUser
+            if (currentUser != null) {
+                Log.w(TAG, "🚨 Attempting emergency user profile creation")
+                createNewUserProfile(currentUser.uid, currentUser.email ?: "", currentUser.displayName ?: "")
+            } else {
+                Result.failure(SecurityException("Failed to ensure user profile: ${e.message}"))
+            }
+        } catch (fallbackError: Exception) {
+            Log.e(TAG, "❌ Emergency profile creation also failed", fallbackError)
+            Result.failure(SecurityException("Failed to ensure user profile: ${e.message}"))
+        }
+    } as Result<User>
+
+    /**
+     * ✅ NEW: Helper to create new user profile safely
+     */
+    private suspend fun createNewUserProfile(userId: String, email: String, displayName: String): Result<User> = try {
+        val newUser = User(
+            uid = userId,
+            email = email,
+            fullName = displayName.ifEmpty { email.substringBefore("@") },
+            createdAt = System.currentTimeMillis(),
+            lastActiveAt = System.currentTimeMillis(),
+            valid = true,
+            isEmailVerified = auth.currentUser?.isEmailVerified ?: false,
+            emailVerified = auth.currentUser?.isEmailVerified ?: false
+        ).sanitized()
+
+        // ✅ SAFE: Use merge to avoid overwriting existing data
+        usersCollection.document(userId)
+            .set(newUser, SetOptions.merge())
+            .await()
+
+        _currentUserFlow.value = newUser
+        Log.i(TAG, "✅ Created new user profile for: $email")
+        Result.success(newUser)
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to create new user profile", e)
+        Result.failure(SecurityException("Failed to create user profile: ${e.message}"))
     }
 
+    fun observeVoiceTriggerData(): Flow<VoiceTriggerData?> {
+        val currentUser = auth.currentUser
+        return if (currentUser != null) {
+            firestore.collection(USERS_COLLECTION)
+                .document(currentUser.uid)
+                .snapshots()
+                .map { snapshot ->
+                    if (snapshot.exists()) {
+                        val data = snapshot.data ?: emptyMap()
+                        VoiceTriggerData(
+                            keyword = data["triggerKeyword"] as? String,
+                            voiceAudioUrl = data["voiceAudioUrl"] as? String,
+                            transcriptionData = data["transcriptionData"] as? Map<String, Any>,
+                            createdAt = data["createdAt"] as? Long,
+                            updatedAt = data["triggerUpdatedAt"] as? Long,
+                            audioFileSize = data["audioFileSize"] as? Long,
+                            recordingDuration = data["recordingDuration"] as? Int
+                        )
+                    } else {
+                        null
+                    }
+                }
+                .catch { e ->
+                    Log.e(TAG, "Error observing voice trigger data", e)
+                    emit(null)
+                }
+        } else {
+            kotlinx.coroutines.flow.flowOf(null)
+        }
+    }
+
+    suspend fun updateUserSettings(settings: Map<String, Any>): Result<Unit> = try {
+        val currentUser = auth.currentUser
+            ?: return Result.failure(SecurityException("User must be authenticated"))
+
+        val userId = currentUser.uid
+
+        Log.d(TAG, "Updating user settings")
+
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .set(settings, SetOptions.merge())
+            .await()
+
+        Log.i(TAG, "✅ User settings updated")
+        Result.success(Unit)
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to update user settings", e)
+        Result.failure(SecurityException("Failed to update user settings: ${e.message}"))
+    }
+
+    suspend fun getVoiceTriggerData(): Result<VoiceTriggerData> = try {
+        val currentUser = auth.currentUser
+            ?: return Result.failure(SecurityException("User must be authenticated"))
+
+        val userId = currentUser.uid
+
+        val document = firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .get()
+            .await()
+
+        if (document.exists()) {
+            val data = document.data ?: emptyMap()
+
+            val voiceTriggerData = VoiceTriggerData(
+                keyword = data["triggerKeyword"] as? String,
+                voiceAudioUrl = data["voiceAudioUrl"] as? String,
+                transcriptionData = data["transcriptionData"] as? Map<String, Any>,
+                createdAt = data["createdAt"] as? Long,
+                updatedAt = data["triggerUpdatedAt"] as? Long,
+                audioFileSize = data["audioFileSize"] as? Long,
+                recordingDuration = data["recordingDuration"] as? Int
+            )
+
+            Result.success(voiceTriggerData)
+        } else {
+            Result.success(VoiceTriggerData()) // Empty data
+        }
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to get voice trigger data", e)
+        Result.failure(SecurityException("Failed to get voice trigger data: ${e.message}"))
+    }
+
+    suspend fun deleteVoiceTriggerData(): Result<Unit> = try {
+        val currentUser = auth.currentUser
+            ?: return Result.failure(SecurityException("User must be authenticated"))
+
+        val userId = currentUser.uid
+
+        Log.d(TAG, "Deleting voice trigger data")
+
+        val updates = mapOf(
+            "triggerKeyword" to null,
+            "voiceAudioUrl" to null,
+            "transcriptionData" to null,
+            "triggerDeletedAt" to System.currentTimeMillis()
+        )
+
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .set(updates, SetOptions.merge())
+            .await()
+
+        Log.i(TAG, "✅ Voice trigger data deleted")
+        Result.success(Unit)
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to delete voice trigger data", e)
+        Result.failure(SecurityException("Failed to delete voice trigger data: ${e.message}"))
+    }
+
+    /**
+     * ✅ FIXED: Safe user profile creation
+     */
     suspend fun createUserProfile(user: User): Result<Unit> = try {
         val currentUser = auth.currentUser
         require(currentUser != null) { "User must be authenticated" }
@@ -106,35 +391,67 @@ class UserRepository @Inject constructor(
         val sanitizedUser = user.sanitized().copy(
             uid = currentUser.uid,
             email = currentUser.email ?: "",
-            isEmailVerified = currentUser.isEmailVerified
+            isEmailVerified = currentUser.isEmailVerified,
+            emailVerified = currentUser.isEmailVerified, // Sync both fields
+            createdAt = System.currentTimeMillis(),
+            lastActiveAt = System.currentTimeMillis(),
+            valid = true
         )
 
         require(sanitizedUser.isValid()) { "Invalid user data" }
 
-        // FIXED: Use merge with lastActiveAt update
-        val updateData = sanitizedUser.copy(
-            lastActiveAt = null // Let Firebase set this via @ServerTimestamp
-        )
-
         usersCollection.document(currentUser.uid)
-            .set(updateData, SetOptions.merge())
+            .set(sanitizedUser, SetOptions.merge())
             .await()
 
         // Update local cache
         _currentUserFlow.value = sanitizedUser
+        Log.i(TAG, "✅ User profile created/updated successfully")
         Result.success(Unit)
     } catch (e: Exception) {
         Log.e("UserRepository", "❌ Failed to create/update user profile", e)
         Result.failure(SecurityException("Failed to create user profile: ${e.message}"))
     }
 
-    // Get current user profile
+    suspend fun updateUserProfile(updates: Map<String, Any>): Result<Unit> = try {
+        val currentUser = auth.currentUser
+            ?: return Result.failure(SecurityException("User must be authenticated"))
+
+        val userId = currentUser.uid
+
+        Log.d(TAG, "Updating user profile with ${updates.keys}")
+
+        // ✅ ADD: Ensure lastActiveAt is always updated
+        val safeUpdates = updates.toMutableMap().apply {
+            put("lastActiveAt", System.currentTimeMillis())
+        }
+
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .set(safeUpdates, SetOptions.merge())
+            .await()
+
+        Log.i(TAG, "✅ User profile updated successfully")
+        Result.success(Unit)
+
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to update user profile", e)
+        Result.failure(SecurityException("Failed to update user profile: ${e.message}"))
+    }
+
+    /**
+     * ✅ FIXED: Safe user profile retrieval
+     */
     suspend fun getCurrentUserProfile(): Result<User?> = try {
         val currentUser = auth.currentUser
         require(currentUser != null) { "User must be authenticated" }
 
         val document = usersCollection.document(currentUser.uid).get().await()
-        val user = document.toObject(User::class.java)
+        val user = if (document.exists()) {
+            safeDeserializeUser(document.data, document.id)
+        } else {
+            null
+        }
 
         _currentUserFlow.value = user
         Result.success(user)
@@ -143,38 +460,39 @@ class UserRepository @Inject constructor(
         Result.failure(SecurityException("Failed to get user profile: ${e.message}"))
     }
 
-    // Observe user profile changes
+    /**
+     * ✅ FIXED: Safe user profile observation
+     */
     fun observeCurrentUserProfile(): Flow<User?> {
         val currentUser = auth.currentUser
         return if (currentUser != null) {
-            usersCollection.document(currentUser.uid)
+            firestore.collection(USERS_COLLECTION)
+                .document(currentUser.uid)
                 .snapshots()
                 .map { snapshot ->
-                    try {
-                        val user = snapshot.toObject(User::class.java)
-                        _currentUserFlow.value = user // Keep cache synchronized
-                        user
-                    } catch (e: Exception) {
-                        Log.e("UserRepository", "Error parsing user document", e)
+                    if (snapshot.exists()) {
+                        safeDeserializeUser(snapshot.data, snapshot.id)?.copy(uid = currentUser.uid)
+                    } else {
                         null
                     }
+                }
+                .catch { e ->
+                    Log.e(TAG, "Error observing user profile", e)
+                    emit(null)
                 }
         } else {
             kotlinx.coroutines.flow.flowOf(null)
         }
     }
 
-
-
     suspend fun updateSafetyStatus(status: SafetyStatus): Result<Unit> = try {
         val currentUser = auth.currentUser
         require(currentUser != null) { "User must be authenticated" }
 
-        // FIXED: Use Timestamp.now() for lastActiveAt in updates
         usersCollection.document(currentUser.uid)
             .set(mapOf(
-                "safetyStatus" to status,
-                "lastActiveAt" to Timestamp.now() // Use Timestamp instead of ServerTimestamp for updates
+                "safetyStatus" to status.name,
+                "lastActiveAt" to System.currentTimeMillis()
             ), SetOptions.merge())
             .await()
 
@@ -191,34 +509,53 @@ class UserRepository @Inject constructor(
         Result.failure(SecurityException("Failed to update safety status: ${e.message}"))
     }
 
-    // ✅ FIXED: Update trigger keyword with merge strategy
-    suspend fun updateTriggerKeyword(keyword: String): Result<Unit> = try {
+    /**
+     * ✅ FIXED: Safe trigger keyword update
+     */
+    suspend fun updateTriggerKeyword(
+        keyword: String,
+        voiceAudioUrl: String? = null,
+        transcriptionData: Map<String, Any>? = null
+    ): Result<Unit> = try {
         val currentUser = auth.currentUser
-        require(currentUser != null) { "User must be authenticated" }
-        require(keyword.length >= User.MIN_TRIGGER_KEYWORD_LENGTH) { "Trigger keyword too short" }
-        require(keyword.length <= User.MAX_TRIGGER_KEYWORD_LENGTH) { "Trigger keyword too long" }
+            ?: return Result.failure(SecurityException("User must be authenticated"))
 
-        val sanitizedKeyword = keyword.trim().lowercase()
+        val userId = currentUser.uid
 
-        usersCollection.document(currentUser.uid)
-            .set(mapOf(
-                "triggerKeyword" to sanitizedKeyword,
-                "lastActiveAt" to Timestamp.now()
-            ), SetOptions.merge())
-            .await()
+        Log.d(TAG, "Updating trigger keyword: $keyword")
 
-        // Update local cache
-        val currentUserData = _currentUserFlow.value
-        if (currentUserData != null) {
-            _currentUserFlow.value = currentUserData.copy(triggerKeyword = sanitizedKeyword)
+        val updates = mutableMapOf<String, Any>(
+            "triggerKeyword" to keyword,
+            "triggerUpdatedAt" to System.currentTimeMillis(),
+            "lastActiveAt" to System.currentTimeMillis()
+        )
+
+        // Add voice audio URL if provided
+        voiceAudioUrl?.let {
+            updates["voiceAudioUrl"] = it
         }
 
+        // Add transcription data if provided
+        transcriptionData?.let {
+            updates["transcriptionData"] = it
+        }
+
+        firestore.collection(USERS_COLLECTION)
+            .document(userId)
+            .set(updates, SetOptions.merge())
+            .await()
+
+        Log.i(TAG, "✅ Trigger keyword updated: $keyword")
         Result.success(Unit)
+
     } catch (e: Exception) {
-        Log.e("UserRepository", "❌ Failed to update trigger keyword", e)
+        Log.e(TAG, "❌ Failed to update trigger keyword", e)
         Result.failure(SecurityException("Failed to update trigger keyword: ${e.message}"))
     }
-    // ✅ ADDED: Safe field update helper
+
+    /**
+     * ✅ FIXED: Safe field update helper
+     */
     suspend fun updateUserField(field: String, value: Any): Result<Unit> = try {
         val currentUser = auth.currentUser
         require(currentUser != null) { "User must be authenticated" }
@@ -226,7 +563,7 @@ class UserRepository @Inject constructor(
         usersCollection.document(currentUser.uid)
             .set(mapOf(
                 field to value,
-                "lastActiveAt" to Timestamp.now()
+                "lastActiveAt" to System.currentTimeMillis()
             ), SetOptions.merge())
             .await()
 
@@ -242,14 +579,18 @@ class UserRepository @Inject constructor(
     fun getCurrentUser(): Flow<User?> = _currentUserFlow.asStateFlow()
 
     /**
-     * Refresh current user data from Firestore
+     * ✅ FIXED: Safe user refresh
      */
     suspend fun refreshCurrentUser(): Result<Unit> = try {
         val currentUser = auth.currentUser
         require(currentUser != null) { "User must be authenticated" }
 
         val document = usersCollection.document(currentUser.uid).get().await()
-        val user = document.toObject(User::class.java)
+        val user = if (document.exists()) {
+            safeDeserializeUser(document.data, document.id)
+        } else {
+            null
+        }
 
         _currentUserFlow.value = user
         Result.success(Unit)
@@ -266,13 +607,17 @@ class UserRepository @Inject constructor(
     }
 
     /**
-     * Initialize cache with current user data
+     * ✅ FIXED: Safe cache initialization
      */
     suspend fun initializeUserCache(): Result<Unit> = try {
         val currentUser = auth.currentUser
         if (currentUser != null) {
             val document = usersCollection.document(currentUser.uid).get().await()
-            val user = document.toObject(User::class.java)
+            val user = if (document.exists()) {
+                safeDeserializeUser(document.data, document.id)
+            } else {
+                null
+            }
             _currentUserFlow.value = user
         } else {
             _currentUserFlow.value = null
@@ -316,7 +661,7 @@ class UserRepository @Inject constructor(
     }
 
     /**
-     * Update emergency contacts list
+     * ✅ FIXED: Safe emergency contacts update
      */
     suspend fun updateEmergencyContacts(contactIds: List<String>): Result<Unit> = try {
         val currentUser = auth.currentUser
@@ -325,7 +670,7 @@ class UserRepository @Inject constructor(
         usersCollection.document(currentUser.uid)
             .set(mapOf(
                 "emergencyContacts" to contactIds,
-                "lastActiveAt" to Timestamp.now()
+                "lastActiveAt" to System.currentTimeMillis()
             ), SetOptions.merge())
             .await()
 
@@ -339,5 +684,58 @@ class UserRepository @Inject constructor(
     } catch (e: Exception) {
         Log.e("UserRepository", "❌ Failed to update emergency contacts", e)
         Result.failure(SecurityException("Failed to update emergency contacts: ${e.message}"))
+    }
+}
+
+data class VoiceTriggerData(
+    val keyword: String? = null,
+    val voiceAudioUrl: String? = null,
+    val transcriptionData: Map<String, Any>? = null,
+    val createdAt: Long? = null,
+    val updatedAt: Long? = null,
+    val audioFileSize: Long? = null,
+    val recordingDuration: Int? = null
+) {
+    fun hasKeyword(): Boolean = !keyword.isNullOrBlank()
+
+    fun hasAudioSample(): Boolean = !voiceAudioUrl.isNullOrBlank()
+
+    fun hasTranscription(): Boolean = transcriptionData != null
+
+    fun getTranscribedText(): String? {
+        return transcriptionData?.get("primaryText") as? String
+    }
+
+    fun getTranscriptionConfidence(): Float? {
+        return transcriptionData?.get("confidence") as? Float
+    }
+
+    fun isKeywordVerified(): Boolean {
+        val matchData = transcriptionData?.get("matchResult") as? Map<String, Any>
+        return matchData?.get("isMatch") as? Boolean == true
+    }
+
+    fun getMatchConfidence(): Float? {
+        val matchData = transcriptionData?.get("matchResult") as? Map<String, Any>
+        return matchData?.get("confidence") as? Float
+    }
+
+    fun getAlternativeTranscriptions(): List<String>? {
+        @Suppress("UNCHECKED_CAST")
+        return transcriptionData?.get("alternativeTexts") as? List<String>
+    }
+
+    fun isComplete(): Boolean {
+        return hasKeyword() && hasAudioSample()
+    }
+
+    fun getSummary(): String {
+        return when {
+            !hasKeyword() -> "No keyword set"
+            !hasAudioSample() -> "Keyword set, no audio sample"
+            !hasTranscription() -> "Audio recorded, not transcribed"
+            isKeywordVerified() -> "Verified voice trigger: '$keyword'"
+            else -> "Unverified voice trigger: '$keyword'"
+        }
     }
 }

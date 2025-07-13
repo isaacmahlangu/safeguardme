@@ -31,6 +31,7 @@ sealed class Screen(val route: String) {
     object EmergencyTab : Screen("emergency_tab")
     object ReportTab : Screen("report_tab")
     object AssistantTab : Screen("assistant_tab")
+    object ProfileTab : Screen("profile_tab")
 
 
 }

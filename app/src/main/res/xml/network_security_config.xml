@@ -4,8 +4,14 @@
         <domain includeSubdomains="true">firebase.googleapis.com</domain>
         <domain includeSubdomains="true">firestore.googleapis.com</domain>
         <domain includeSubdomains="true">cloudfunctions.net</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
         <trust-anchors>
             <certificates src="system"/>
         </trust-anchors>
     </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
 </network-security-config>

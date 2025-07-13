@@ -1,41 +1,88 @@
-<?xml version="1.0" encoding="utf-8"?>
+<!-- AndroidManifest.xml - Add these permissions and service declarations -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Required permissions with justification -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- ✅ ESSENTIAL PERMISSIONS FOR SAFETY MONITORING -->
 
-    <!-- Camera permissions -->
-    <uses-permission android:name="android.permission.CAMERA" />
-
-    <!-- Storage permissions -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-
-    <!-- Location permissions (for incident reporting) -->
+    <!-- Location permissions for GPS tracking -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Camera permissions for photo evidence -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Audio permissions for recording and transcription -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.BIND_VOICE_INTERACTION"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Phone permissions for emergency calls -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!-- SMS permissions for emergency contact notifications -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
+    <!-- Storage permissions for evidence files -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- Network permissions for Firebase uploads -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Foreground service permissions (Android 9+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- Wake lock for reliable background operation -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Boot receiver for auto-start safety features -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Vibration for haptic feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Future: Audio recording -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- System alert window for emergency overlays -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Future: Phone permissions for emergency calling -->
-    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Device admin permissions for enhanced security -->
+    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN"
+        tools:ignore="ProtectedPermissions" />
 
-    <!-- Camera hardware features -->
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Notification permissions (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-
-
-    <!-- Security: Explicitly deny dangerous permissions -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+    <!-- ✅ HARDWARE FEATURES REQUIRED -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.location"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+    <!--android:networkSecurityConfig="@xml/network_security_config"-->
 
     <application
         android:name=".SafeguardMeApplication"
@@ -48,76 +95,170 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SafeguardMe"
         tools:targetApi="31">
+
+        <!-- ✅ MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.SafeguardMe"
             android:launchMode="singleTop"
-            android:excludeFromRecents="false"
-            android:allowTaskReparenting="false"
-            android:alwaysRetainTaskState="true"
-            android:clearTaskOnLaunch="false"
-            android:finishOnTaskLaunch="false"
-            android:noHistory="false"
-            android:stateNotNeeded="false"
-            android:windowSoftInputMode="adjustResize|stateHidden">
+            android:theme="@style/Theme.SafeguardMe">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Security: Prevent external intent manipulation -->
+            <!-- Emergency activation shortcuts -->
             <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
+                <action android:name="com.safeguardme.EMERGENCY_ACTIVATE" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- Security: Disable screenshot/screen recording for sensitive content -->
-        <!--<meta-data android:name="android.allow_backup" android:value="true" />-->
-        <!--<meta-data android:name="android.allow_clear_user_data" android:value="true" />-->
+        <!-- ✅ SAFETY MONITORING SERVICE -->
+        <service
+            android:name=".services.SafetyMonitoringService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location|microphone|camera"
+            android:stopWithTask="false">
+            <intent-filter>
+                <action android:name="com.safeguardme.START_SAFETY_MONITORING" />
+                <action android:name="com.safeguardme.STOP_SAFETY_MONITORING" />
+                <action android:name="com.safeguardme.EMERGENCY_ESCALATION" />
+            </intent-filter>
+        </service>
 
-        <!-- Future: Firebase Cloud Messaging (Phase 2) -->
-        <!-- <service android:name=".firebase.SafeguardMeFirebaseMessagingService"
-            android:exported="false">
+        <!--<service
+            android:name=".services.SafetyVoiceInteractionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true"
+            tools:ignore="MissingClass">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+        </service>-->
+
+        <!-- ✅ EMERGENCY BROADCAST RECEIVER -->
+        <receiver
+            android:name=".receivers.EmergencyBroadcastReceiver"
+            android:enabled="true"
+            android:exported="false"
+            tools:ignore="MissingClass">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+
+            <!-- Emergency gesture intents -->
+            <intent-filter>
+                <action android:name="com.safeguardme.VOLUME_BUTTON_EMERGENCY" />
+                <action android:name="com.safeguardme.POWER_BUTTON_EMERGENCY" />
+                <action android:name="com.safeguardme.SHAKE_EMERGENCY" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ✅ SMS RECEIVER FOR EMERGENCY RESPONSES -->
+        <receiver
+            android:name=".receivers.EmergencySmsReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS"
+            tools:ignore="MissingClass">
+            <intent-filter android:priority="1000">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ✅ DEVICE ADMIN RECEIVER FOR ENHANCED SECURITY -->
+        <receiver
+            android:name=".receivers.SafetyDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            tools:ignore="MissingClass">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ✅ FILE PROVIDER FOR SHARING EVIDENCE -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.safeguardme.app.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- ✅ FIREBASE SERVICES -->
+        <service
+            android:name=".services.SafeguardMeFirebaseMessagingService"
+            android:exported="false"
+            tools:ignore="MissingClass">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
-        </service> -->
+        </service>
 
-        <!-- Future: Biometric authentication service (Phase 2) -->
-        <!-- <service android:name=".security.BiometricAuthService"
+        <!-- ✅ EMERGENCY CONTACT SYNC SERVICE -->
+        <service
+            android:name=".services.EmergencyContactSyncService"
             android:enabled="true"
-            android:exported="false" /> -->
+            android:exported="false"
+            tools:ignore="MissingClass" />
 
-        <!-- Future: Emergency broadcast receiver (Phase 2) -->
-        <!-- <receiver android:name=".security.EmergencyBroadcastReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter android:priority="1000">
-                <action android:name="com.safeguardme.EMERGENCY_TRIGGER" />
-            </intent-filter>
-        </receiver> -->
+        <!-- ✅ WORK MANAGER FOR BACKGROUND TASKS -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="com.safeguardme.app.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup" />
+        </provider>
 
     </application>
 
-    <!-- Security: Restrict to specific Android versions -->
-    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <!-- ✅ QUERIES FOR INTENT RESOLUTION (Android 11+) -->
+    <queries>
+        <!-- Emergency services -->
+        <intent>
+            <action android:name="android.intent.action.CALL" />
+            <data android:scheme="tel" />
+        </intent>
 
-    <!-- Security: Hardware requirements -->
-    <uses-feature
-        android:name="android.hardware.security.model"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.fingerprint"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.biometrics"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.telephony"
-        android:required="false" />
+        <!-- SMS/messaging apps -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="sms" />
+        </intent>
 
+        <!-- Maps for location sharing -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+
+        <!-- Email for evidence sharing -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+
+        <!-- Speech recognition -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
 
 </manifest>

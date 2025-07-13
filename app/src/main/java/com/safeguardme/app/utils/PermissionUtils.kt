@@ -2,8 +2,11 @@
 package com.safeguardme.app.utils
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
+import android.speech.SpeechRecognizer
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 object PermissionUtils {
@@ -80,6 +83,21 @@ object PermissionUtils {
      */
     fun isAudioRecordingPermissionGranted(context: Context): Boolean {
         return isPermissionGranted(context, RECORD_AUDIO_PERMISSION)
+    }
+
+    fun requestAudioPermissions(activity: Activity, requestCode: Int) {
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.INTERNET
+            ),
+            requestCode
+        )
+    }
+
+    fun isSpeechRecognitionAvailable(context: Context): Boolean {
+        return SpeechRecognizer.isRecognitionAvailable(context)
     }
 
     /**

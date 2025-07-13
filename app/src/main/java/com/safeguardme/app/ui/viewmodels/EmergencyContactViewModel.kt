@@ -4,6 +4,7 @@
 
 package com.safeguardme.app.ui.viewmodels
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.safeguardme.app.data.models.ContactType
@@ -61,6 +62,10 @@ class EmergencyContactViewModel @Inject constructor(
         .map { it.groupBy { contact -> contact.contactType } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    private val _isDuplicateCleanupInProgress = MutableStateFlow(false)
+    val isDuplicateCleanupInProgress: StateFlow<Boolean> = _isDuplicateCleanupInProgress.asStateFlow()
+
+
     init {
         loadContacts()
         observeContacts()
@@ -76,8 +81,13 @@ class EmergencyContactViewModel @Inject constructor(
                 repository.getAllContacts()
                     .onSuccess { contacts ->
                         _contacts.value = contacts
+
+                        // ✅ FIXED: Just warn about high contact count, don't auto-deduplicate
+                        if (contacts.size > 15) {
+                            _error.value = "⚠️ ${contacts.size} contacts detected. Use 'Cleanup Duplicates' if needed."
+                        }
+
                         if (contacts.isEmpty()) {
-                            // Initialize default contacts for new users
                             repository.initializeDefaultContacts()
                         }
                     }
@@ -92,15 +102,25 @@ class EmergencyContactViewModel @Inject constructor(
         }
     }
 
+
     /**
      * Observe real-time contact changes
      */
     private fun observeContacts() {
         viewModelScope.launch {
             repository.observeContacts()
-                .catch { e -> handleError(e) }
+                .catch { e ->
+                    // Don't crash on observer errors - keep current state
+                    Log.w("ContactViewModel", "Observer error - maintaining current state", e)
+                }
                 .collect { contacts ->
-                    _contacts.value = contacts
+                    // ✅ NEW: Additional client-side deduplication
+                    val distinctContacts = contacts.distinctBy { it.phoneNumber }
+                    _contacts.value = distinctContacts
+
+                    if (distinctContacts.size != contacts.size) {
+                        Log.w("ContactViewModel", "Filtered duplicates: ${contacts.size} → ${distinctContacts.size}")
+                    }
                 }
         }
     }
@@ -255,6 +275,51 @@ class EmergencyContactViewModel @Inject constructor(
         val currentContacts = _contacts.value
         return com.safeguardme.app.data.models.validateContactList(currentContacts)
     }*/
+
+    /**
+     * ✅ NEW: Manual duplicate cleanup trigger
+     */
+    fun cleanupDuplicates() {
+        viewModelScope.launch {
+            _isDuplicateCleanupInProgress.value = true
+            _isLoading.value = true
+
+            try {
+                repository.deduplicateContacts()
+                    .onSuccess { deletedCount ->
+                        val message = if (deletedCount > 0) {
+                            "✅ Cleaned up $deletedCount duplicate contacts"
+                        } else {
+                            "No duplicates found to clean up"
+                        }
+                        _successMessage.value = message
+                        Log.i("ContactViewModel", message)
+
+                        // Refresh the contacts list after cleanup
+                        loadContacts()
+                    }
+                    .onFailure { error ->
+                        if (error.message?.contains("already in progress") == true) {
+                            _error.value = "Cleanup already in progress, please wait..."
+                        } else {
+                            handleError(error)
+                        }
+                    }
+            } catch (e: Exception) {
+                handleError(e)
+            } finally {
+                _isDuplicateCleanupInProgress.value = false
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun getDeduplicationStatus() {
+        viewModelScope.launch {
+            val status = repository.getDeduplicationStatus()
+            _successMessage.value = status
+        }
+    }
 
     /**
      * Clear success message

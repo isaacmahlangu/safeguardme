@@ -1,11 +1,16 @@
-// data/models/User.kt
+// data/models/User.kt - FIXED for Firebase Compatibility
 package com.safeguardme.app.data.models
 
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.ServerTimestamp
+import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.IgnoreExtraProperties
 
 /**
+ * ✅ FIXED: Added @IgnoreExtraProperties to handle unknown fields gracefully
+ * ✅ FIXED: Made timestamps flexible to handle both Long and Timestamp types
+ * ✅ FIXED: Added missing fields that Firebase was complaining about
  */
+@IgnoreExtraProperties
 data class User(
     val uid: String = "",
     val email: String = "",
@@ -14,17 +19,35 @@ data class User(
     val profilePhotoUrl: String? = null,
     val isEmailVerified: Boolean = false,
 
-    // FIXED: Use Timestamp instead of Long for Firebase compatibility
-    @ServerTimestamp
-    val createdAt: Timestamp? = null,
+    // ✅ FIXED: Add emailVerified field that Firebase was looking for
+    val emailVerified: Boolean = false, // Map to isEmailVerified
 
-    @ServerTimestamp
-    val lastActiveAt: Timestamp? = null,
+    val lastLoginAt: Long = 0L,
+    val isActive: Boolean = true,
+
+    // ✅ FIXED: Add valid field that Firebase was looking for
+    val valid: Boolean = true,
+
+    val triggerKeyword: String? = null,
+    val voiceAudioUrl: String? = null,
+    val transcriptionData: Map<String, Any>? = null,
+    val triggerUpdatedAt: Long? = null,
+    val triggerDeletedAt: Long? = null,
+
+    // ✅ FIXED: Add audioFileSize that Firebase was looking for
+    val audioFileSize: Long? = null,
+
+    // ✅ FIXED: Add profileSecurityLevel that Firebase was looking for
+    val profileSecurityLevel: String? = null,
+
+    // ✅ CRITICAL FIX: Use nullable Any to handle both Long and Timestamp
+    // Firebase will automatically convert between them
+    val createdAt: Any? = null, // Can be Long or Timestamp
+    val lastActiveAt: Any? = null, // Can be Long or Timestamp
 
     // Safety-specific fields
     val safetyStatus: SafetyStatus = SafetyStatus.DISABLED,
     val emergencyContacts: List<String> = emptyList(), // Contact IDs
-    val triggerKeyword: String = "help me",
 
     // Additional profile fields
     val isProfileComplete: Boolean = false,
@@ -42,26 +65,100 @@ data class User(
     }
 
     /**
-     * Validate user data for safety requirements
+     * ✅ NEW: Safe timestamp conversion helpers
+     */
+    @get:Exclude
+    val createdAtTimestamp: Timestamp?
+        get() = when (createdAt) {
+            is Timestamp -> createdAt
+            is Long -> if (createdAt > 0) Timestamp(createdAt / 1000, ((createdAt % 1000) * 1000000).toInt()) else null
+            is Number -> Timestamp(createdAt.toLong() / 1000, ((createdAt.toLong() % 1000) * 1000000).toInt())
+            else -> null
+        }
+
+    @get:Exclude
+    val lastActiveAtTimestamp: Timestamp?
+        get() = when (lastActiveAt) {
+            is Timestamp -> lastActiveAt
+            is Long -> if (lastActiveAt > 0) Timestamp(lastActiveAt / 1000, ((lastActiveAt % 1000) * 1000000).toInt()) else null
+            is Number -> Timestamp(lastActiveAt.toLong() / 1000, ((lastActiveAt.toLong() % 1000) * 1000000).toInt())
+            else -> null
+        }
+
+    @get:Exclude
+    val createdAtMillis: Long
+        get() = when (createdAt) {
+            is Timestamp -> createdAt.toDate().time
+            is Long -> createdAt
+            is Number -> createdAt.toLong()
+            else -> 0L
+        }
+
+    @get:Exclude
+    val lastActiveAtMillis: Long
+        get() = when (lastActiveAt) {
+            is Timestamp -> lastActiveAt.toDate().time
+            is Long -> lastActiveAt
+            is Number -> lastActiveAt.toLong()
+            else -> 0L
+        }
+
+    /**
+     * ✅ FIXED: Use emailVerified as fallback for isEmailVerified
+     */
+    @get:Exclude
+    val effectiveEmailVerified: Boolean
+        get() = isEmailVerified || emailVerified
+
+    /**
+     * ✅ NEW: Check if user has configured voice trigger
+     */
+    fun hasVoiceTrigger(): Boolean {
+        return !triggerKeyword.isNullOrBlank() && !voiceAudioUrl.isNullOrBlank()
+    }
+
+    /**
+     * ✅ NEW: Get voice trigger summary
+     */
+    fun getVoiceTriggerSummary(): String {
+        return when {
+            triggerKeyword.isNullOrBlank() -> "No voice trigger configured"
+            voiceAudioUrl.isNullOrBlank() -> "Keyword set: '$triggerKeyword' (no audio)"
+            else -> "Voice trigger active: '$triggerKeyword'"
+        }
+    }
+
+    /**
+     * ✅ NEW: Check if voice trigger is verified via transcription
+     */
+    fun isVoiceTriggerVerified(): Boolean {
+        val matchData = transcriptionData?.get("matchResult") as? Map<String, Any>
+        return matchData?.get("isMatch") as? Boolean == true
+    }
+
+    /**
+     * ✅ FIXED: Updated validation to handle nullable triggerKeyword properly
      */
     fun isValid(): Boolean {
         return uid.isNotBlank() &&
                 email.isNotBlank() &&
                 fullName.isNotBlank() &&
                 fullName.length <= MAX_NAME_LENGTH &&
-                triggerKeyword.length >= MIN_TRIGGER_KEYWORD_LENGTH &&
-                triggerKeyword.length <= MAX_TRIGGER_KEYWORD_LENGTH
+                (triggerKeyword?.length ?: 0) >= MIN_TRIGGER_KEYWORD_LENGTH &&
+                (triggerKeyword?.length ?: 0) <= MAX_TRIGGER_KEYWORD_LENGTH
     }
 
     /**
-     * Sanitize user data for security
+     * ✅ FIXED: Enhanced sanitization
      */
     fun sanitized(): User {
         return this.copy(
             email = email.trim().lowercase(),
             fullName = fullName.trim(),
             phoneNumber = phoneNumber.trim(),
-            triggerKeyword = triggerKeyword.trim().lowercase()
+            triggerKeyword = triggerKeyword?.trim()?.lowercase(),
+            emailVerified = effectiveEmailVerified, // Sync the fields
+            valid = isValid()
         )
     }
 
@@ -131,7 +228,7 @@ data class EmergencySettings(
 )
 
 /**
- * User creation helper for Firebase compatibility
+ * ✅ FIXED: User creation helper with proper timestamp handling
  */
 object UserFactory {
 
@@ -151,9 +248,11 @@ object UserFactory {
             fullName = displayName ?: "",
             profilePhotoUrl = photoUrl,
             isEmailVerified = isEmailVerified,
-            // Don't set timestamps here - let Firebase handle them
-            createdAt = null,
-            lastActiveAt = null
+            emailVerified = isEmailVerified, // Sync both fields
+            // Use current timestamp in millis for compatibility
+            createdAt = System.currentTimeMillis(),
+            lastActiveAt = System.currentTimeMillis(),
+            valid = true
         )
     }
 
@@ -166,14 +265,15 @@ object UserFactory {
         fullName: String,
         phoneNumber: String = ""
     ): User {
+        val currentTime = System.currentTimeMillis()
         return User(
             uid = uid,
             email = email,
             fullName = fullName,
             phoneNumber = phoneNumber,
-            // Firebase will set these automatically
-            createdAt = null,
-            lastActiveAt = null
+            createdAt = currentTime,
+            lastActiveAt = currentTime,
+            valid = true
         ).sanitized()
     }
 
@@ -187,6 +287,7 @@ object UserFactory {
         phoneNumber: String,
         triggerKeyword: String = "help me"
     ): User {
+        val currentTime = System.currentTimeMillis()
         return User(
             uid = uid,
             email = email,
@@ -198,8 +299,9 @@ object UserFactory {
                 emergencyCallEnabled = true,
                 panicButtonEnabled = true
             ),
-            createdAt = null,
-            lastActiveAt = null
+            createdAt = currentTime,
+            lastActiveAt = currentTime,
+            valid = true
         ).sanitized()
     }
 }
@@ -209,10 +311,10 @@ object UserFactory {
  */
 
 /**
- * Update last active timestamp helper
+ * ✅ FIXED: Update last active timestamp helper
  */
 fun User.withUpdatedActivity(): User {
-    return this.copy(lastActiveAt = Timestamp.now())
+    return this.copy(lastActiveAt = System.currentTimeMillis())
 }
 
 /**

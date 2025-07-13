@@ -1,10 +1,11 @@
 package com.safeguardme.app.auth
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
 import javax.inject.Inject
@@ -14,15 +15,27 @@ class LoginViewModel @Inject constructor(
     private val repository: AuthRepository
 ) : ViewModel() {
 
-    var email = mutableStateOf("")
-    var password = mutableStateOf("")
-    var isLoading = mutableStateOf(false)
-    var error = mutableStateOf<String?>(null)
-    var isAuthenticated = mutableStateOf(false)
+    private val _email = MutableStateFlow("")
+    val email: StateFlow<String> = _email.asStateFlow()
+
+    private val _password = MutableStateFlow("")
+    val password: StateFlow<String> = _password.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _isAuthenticated = MutableStateFlow(false)
+    val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
 
     // Validation states
-    var emailError = mutableStateOf<String?>(null)
-    var passwordError = mutableStateOf<String?>(null)
+    private val _emailError = MutableStateFlow<String?>(null)
+    val emailError: StateFlow<String?> = _emailError.asStateFlow()
+
+    private val _passwordError = MutableStateFlow<String?>(null)
+    val passwordError: StateFlow<String?> = _passwordError.asStateFlow()
 
     // Security features
     private var attemptCount = 0
@@ -46,16 +59,16 @@ class LoginViewModel @Inject constructor(
         if (!validateInputs()) return
         if (isRateLimited()) return
 
-        isLoading.value = true
-        error.value = null
+        _isLoading.value = true
+        _error.value = null
         clearValidationErrors()
 
         viewModelScope.launch {
             try {
-                val result = repository.signIn(email.value.trim(), password.value)
+                val result = repository.signIn(_email.value.trim(), _password.value)
 
                 result.onSuccess {
-                    isAuthenticated.value = true
+                    _isAuthenticated.value = true
                     attemptCount = 0 // Reset on success
                 }.onFailure { exception ->
                     handleLoginFailure(exception)
@@ -63,38 +76,37 @@ class LoginViewModel @Inject constructor(
             } catch (e: Exception) {
                 handleLoginFailure(e)
             } finally {
-                isLoading.value = false
+                _isLoading.value = false
             }
         }
     }
-
     private fun validateInputs(): Boolean {
         var isValid = true
 
         // Email validation
         when {
-            email.value.isBlank() -> {
-                emailError.value = "Email is required"
+            _email.value.isBlank() -> {
+                _emailError.value = "Email is required"
                 isValid = false
             }
-            !EMAIL_PATTERN.matcher(email.value.trim()).matches() -> {
-                emailError.value = "Please enter a valid email address"
+            !EMAIL_PATTERN.matcher(_email.value.trim()).matches() -> {
+                _emailError.value = "Please enter a valid email address"
                 isValid = false
             }
-            else -> emailError.value = null
+            else -> _emailError.value = null
         }
 
         // Password validation
         when {
-            password.value.isBlank() -> {
-                passwordError.value = "Password is required"
+            _password.value.isBlank() -> {
+                _passwordError.value = "Password is required"
                 isValid = false
             }
-            password.value.length < 6 -> {
-                passwordError.value = "Password must be at least 6 characters"
+            _password.value.length < 6 -> {
+                _passwordError.value = "Password must be at least 6 characters"
                 isValid = false
             }
-            else -> passwordError.value = null
+            else -> _passwordError.value = null
         }
 
         return isValid
@@ -107,7 +119,7 @@ class LoginViewModel @Inject constructor(
             val timeSinceLastAttempt = currentTime - lastAttemptTime
             if (timeSinceLastAttempt < lockoutDurationMs) {
                 val remainingMinutes = (lockoutDurationMs - timeSinceLastAttempt) / 60000L
-                error.value = "Too many login attempts. Please wait ${remainingMinutes + 1} minutes before trying again."
+                _error.value = "Too many login attempts. Please wait ${remainingMinutes + 1} minutes before trying again."
                 return true
             } else {
                 // Reset attempts after lockout period
@@ -123,40 +135,45 @@ class LoginViewModel @Inject constructor(
         lastAttemptTime = System.currentTimeMillis()
 
         // Generic error message to prevent account enumeration
-        error.value = when {
+        _error.value = when {
             attemptCount >= maxAttempts -> "Account temporarily locked due to multiple failed attempts"
             else -> "Invalid email or password. Please try again."
         }
 
         // Clear password for security
-        password.value = ""
+        _password.value = ""
     }
 
     private fun clearValidationErrors() {
-        emailError.value = null
-        passwordError.value = null
+        _emailError.value = null
+        _passwordError.value = null
     }
 
     fun clearError() {
-        error.value = null
+        _error.value = null
     }
 
     fun updateEmail(newEmail: String) {
-        email.value = newEmail.trim()
+        _email.value = newEmail.trim()
         // Clear error when user starts typing
-        emailError.value = null
+        _emailError.value = null
     }
 
     fun updatePassword(newPassword: String) {
-        password.value = newPassword
+        _password.value = newPassword
         // Clear error when user starts typing
-        passwordError.value = null
+        _passwordError.value = null
+    }
+
+    // Reset authentication state (useful for logout)
+    fun resetAuthenticationState() {
+        _isAuthenticated.value = false
     }
 
     // Security: Clear sensitive data when ViewModel is cleared
     override fun onCleared() {
         super.onCleared()
-        password.value = ""
-        email.value = ""
+        _password.value = ""
+        _email.value = ""
     }
 }

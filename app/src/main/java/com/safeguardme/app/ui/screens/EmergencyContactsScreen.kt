@@ -191,7 +191,7 @@ fun EmergencyContactsScreen(
 
                     if (otherContacts.isNotEmpty()) {
                         item {
-                            Text(
+                            Text( 
                                 text = "Other Contacts",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,

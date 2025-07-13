@@ -10,6 +10,24 @@
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
 
+# SafetyEvidence models
+-keep class com.safeguardme.app.data.models.SafetyEvidence { *; }
+-keep class com.safeguardme.app.data.models.SafetySession { *; }
+-keep class com.safeguardme.app.data.models.EvidenceType { *; }
+
+# Speech recognition
+-keep class android.speech.** { *; }
+
+# Camera2 API
+-keep class android.hardware.camera2.** { *; }
+
+# Audio recording
+-keep class android.media.** { *; }
+
+# Location services
+-keep class android.location.** { *; }
+-keep class com.google.android.gms.location.** { *; }
+
 # Keep Hilt classes
 -keep class dagger.hilt.** { *; }
 -keep class javax.inject.** { *; }

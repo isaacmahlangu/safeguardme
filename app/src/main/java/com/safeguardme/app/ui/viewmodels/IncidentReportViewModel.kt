@@ -178,7 +178,7 @@ class IncidentReportViewModel @Inject constructor(
 
                 // Upload image
                 storageRepository.uploadEvidenceImage(
-                    uri = uri,
+                    imageUri = uri,
                     contentType = "image/jpeg", // TODO: Get actual content type
                     incidentId = tempIncidentId
                 ).onSuccess { downloadUrl ->

@@ -174,6 +174,12 @@ dependencies {
     // JSON processing (for API communication)
     implementation(libs.kotlinx.serialization.json)
 
+    implementation(libs.androidx.exifinterface)
+
+    implementation(libs.google.play.services.location) // Or libs.google.playservices.location if your alias was google-playservices-location
+
+    implementation(libs.google.gson) // This uses the alias from libs.versions.toml
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

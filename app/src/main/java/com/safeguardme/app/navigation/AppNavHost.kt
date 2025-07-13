@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
 import com.safeguardme.app.data.repositories.SettingsRepository
+import com.safeguardme.app.managers.PermissionManager
 import com.safeguardme.app.ui.components.SafeguardTab
 import com.safeguardme.app.ui.screens.AIAssistanceScreen
 import com.safeguardme.app.ui.screens.EmergencyContactsScreen
@@ -30,6 +31,7 @@ import com.safeguardme.app.ui.screens.SafetyTriggerScreen
 import com.safeguardme.app.ui.screens.SplashScreen
 import com.safeguardme.app.ui.screens.TriggerScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -70,9 +72,13 @@ sealed class NavigationState {
     object Main : NavigationState()
 }
 
+/**
+ * ✅ UPDATED: AppNavHost now properly accepts PermissionManager
+ */
 @Composable
 fun AppNavHost(
     navController: NavHostController = rememberNavController(),
+    permissionManager: PermissionManager, // ✅ REQUIRED: PermissionManager parameter
     navigationViewModel: AppNavigationViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -114,7 +120,7 @@ fun AppNavHost(
             // Auto-navigate based on navigation state
             LaunchedEffect(navigationState) {
                 if (navigationState != NavigationState.Loading) {
-                    kotlinx.coroutines.delay(2000) // 2 second splash
+                    delay(2000) // 2 second splash
                     val destination = when (navigationState) {
                         NavigationState.Onboarding -> Screen.Onboarding.route
                         NavigationState.Authentication -> Screen.Login.route
@@ -146,12 +152,13 @@ fun AppNavHost(
             ForgotPasswordScreen(navController)
         }
 
-        // Main Tab Navigation
+        // ✅ UPDATED: Main Tab Navigation with PermissionManager
         composable("main_tabs") {
             if (authState) {
                 SafeguardTabNavigation(
                     mainNavController = navController,
-                    startTab = SafeguardTab.HOME
+                    startTab = SafeguardTab.HOME,
+                    permissionManager = permissionManager // ✅ Pass PermissionManager to tab navigation
                 )
             } else {
                 LaunchedEffect(Unit) {
@@ -223,9 +230,11 @@ fun AppNavHost(
             }
         }
 
+        // ✅ UPDATED: SafetyTriggerScreen (PermissionManager injected via ViewModel)
         composable(Screen.SafetyTrigger.route) {
             if (authState) {
                 SafetyTriggerScreen(navController)
+                // ✅ NOTE: PermissionManager automatically injected via Hilt in SafetyTriggerViewModel
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {
@@ -235,9 +244,11 @@ fun AppNavHost(
             }
         }
 
+        // ✅ UPDATED: TriggerScreen (PermissionManager injected via ViewModel)
         composable(Screen.Trigger.route) {
             if (authState) {
                 TriggerScreen(navController)
+                // ✅ NOTE: PermissionManager automatically injected via Hilt in TriggerViewModel
             } else {
                 LaunchedEffect(Unit) {
                     navController.navigate(Screen.Login.route) {

@@ -46,7 +46,7 @@ data class EmergencyContact(
             "911", "112", "999", "000",  // Emergency services
             "741741", "85258", "686868", // Crisis text lines
             "211", "311", "411", "511",  // Information services
-            "988", "1-800-273-8255"      // Suicide prevention
+            "988", "10111"      // Suicide prevention
         )
 
         // Default relationships for safety scenarios

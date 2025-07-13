@@ -590,9 +590,19 @@ private fun SecuritySettingsCard(
                 isChecked = appSettings.emergencyContactsOnly,
                 onCheckedChange = { onToggleEmergencyContactsOnly() }
             )
+
+            /*item {
+                /*VoiceDetectionSettingsCard(
+                    voiceDetectionEnabled = viewModel.voiceDetectionEnabled.collectAsState().value,
+                    onToggleVoiceDetection = viewModel::toggleVoiceDetection,
+                    triggerKeyword = viewModel.triggerKeyword.collectAsState().value
+                )*/
+            }*/
         }
     }
 }
+
+
 
 @Composable
 private fun AppInfoCard() {
@@ -745,5 +755,44 @@ private fun SettingItem(
             checked = isChecked,
             onCheckedChange = onCheckedChange
         )
+    }
+}
+
+/**
+ * ✅ NEW: Voice detection settings card
+ */
+@Composable
+private fun VoiceDetectionSettingsCard(
+    voiceDetectionEnabled: Boolean,
+    onToggleVoiceDetection: () -> Unit,
+    triggerKeyword: String?
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Voice Detection",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            SettingItem(
+                icon = Icons.Default.RecordVoiceOver,
+                title = "Always-On Voice Detection",
+                description = if (triggerKeyword != null) {
+                    "Listening for: \"$triggerKeyword\""
+                } else {
+                    "Set up trigger word in Voice Triggers"
+                },
+                isChecked = voiceDetectionEnabled,
+                onCheckedChange = { onToggleVoiceDetection() }
+            )
+
+            if (voiceDetectionEnabled) {
+                //VoiceDetectionStatusCard()
+            }
+        }
     }
 }

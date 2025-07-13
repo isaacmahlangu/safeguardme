@@ -1,14 +1,57 @@
-// ui/screens/TriggerScreen.kt
+// ui/screens/TriggerScreen.kt - Fixed without Auto-Navigation
 package com.safeguardme.app.ui.screens
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -21,6 +64,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.safeguardme.app.managers.KeywordMatchResult
+import com.safeguardme.app.managers.MatchType
+import com.safeguardme.app.managers.TranscriptionResult
 import com.safeguardme.app.ui.viewmodels.TriggerViewModel
 import kotlin.math.sin
 
@@ -42,6 +88,12 @@ fun TriggerScreen(
     val amplitude by viewModel.amplitude.collectAsState()
     val hasRecording by viewModel.hasRecording.collectAsState()
 
+    // Transcription states
+    val isTranscribing by viewModel.isTranscribing.collectAsState()
+    val transcriptionResult by viewModel.transcriptionResult.collectAsState()
+    val keywordMatchResult by viewModel.keywordMatchResult.collectAsState()
+    val showTranscriptionDialog by viewModel.showTranscriptionDialog.collectAsState()
+
     // Playback states
     val isPlaying by viewModel.isPlaying.collectAsState()
 
@@ -61,6 +113,11 @@ fun TriggerScreen(
         targetValue = if (isRecording) 1.2f else 1f,
         animationSpec = tween(200), label = "record_scale"
     )
+
+    // Load existing trigger data on screen start
+    LaunchedEffect(Unit) {
+        viewModel.loadExistingTriggerData()
+    }
 
     Scaffold(
         topBar = {
@@ -147,7 +204,7 @@ fun TriggerScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Choose a unique keyword and record a voice sample. This will allow hands-free emergency activation when you say your keyword.",
+                        text = "Choose a unique keyword and record a voice sample. We'll transcribe your recording to verify accuracy.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -167,7 +224,7 @@ fun TriggerScreen(
                     Icon(Icons.Default.Key, contentDescription = null)
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isRecording && !isSaving
+                enabled = !isRecording && !isSaving && !isTranscribing
             )
 
             // Recording Section
@@ -185,45 +242,72 @@ fun TriggerScreen(
                         fontWeight = FontWeight.SemiBold
                     )
 
-                    if (!isRecording && !hasRecording) {
-                        Text(
-                            text = "Record yourself saying your keyword clearly",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    // Recording Status
+                    when {
+                        isRecording -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                WaveformVisualizer(
+                                    amplitude = amplitude,
+                                    isActive = isRecording
+                                )
+                                Text(
+                                    text = "Recording... ${recordingTime}s / 5s",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
 
-                    // Waveform or Recording Status
-                    if (isRecording) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            WaveformVisualizer(
-                                amplitude = amplitude,
-                                isActive = isRecording
-                            )
-                            Text(
-                                text = "Recording... ${recordingTime}s / 5s",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                        isTranscribing -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                                Text(
+                                    text = "Transcribing your voice...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        hasRecording && keywordMatchResult != null -> {
+                            // Show transcription verification result
+                            TranscriptionResultCard(
+                                keyword = keyword,
+                                matchResult = keywordMatchResult!!,
+                                transcriptionResult = transcriptionResult
                             )
                         }
-                    } else if (hasRecording) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color.Green
-                            )
+
+                        hasRecording -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color.Green
+                                )
+                                Text(
+                                    text = "Recording complete (${recordingTime}s)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.Green
+                                )
+                            }
+                        }
+
+                        else -> {
                             Text(
-                                text = "Recording complete (${recordingTime}s)",
+                                text = "Record yourself saying your keyword clearly",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Green
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -258,7 +342,7 @@ fun TriggerScreen(
                         if (hasRecording) {
                             IconButton(
                                 onClick = { viewModel.playRecording() },
-                                enabled = !isRecording
+                                enabled = !isRecording && !isTranscribing
                             ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
@@ -272,7 +356,7 @@ fun TriggerScreen(
                         if (hasRecording) {
                             IconButton(
                                 onClick = { viewModel.deleteRecording() },
-                                enabled = !isRecording && !isPlaying
+                                enabled = !isRecording && !isPlaying && !isTranscribing
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -300,23 +384,40 @@ fun TriggerScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
-                    text = if (isSaving) "Saving..." else "Save Voice Trigger"
+                    text = when {
+                        isSaving -> "Saving..."
+                        keywordMatchResult?.isMatch == true -> "Save Verified Voice Trigger"
+                        hasRecording -> "Save Voice Trigger (Unverified)"
+                        else -> "Save Voice Trigger"
+                    }
                 )
             }
 
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        // Success Message
-        successMessage?.let { message ->
-            LaunchedEffect(message) {
-                kotlinx.coroutines.delay(3000)
-                viewModel.clearSuccessMessage()
-                navController.navigateUp()
-            }
+        // Transcription Results Dialog
+        if (showTranscriptionDialog) {
+            TranscriptionDialog(
+                keyword = keyword,
+                transcriptionResult = transcriptionResult,
+                keywordMatchResult = keywordMatchResult,
+                onAccept = viewModel::acceptTranscription,
+                onRetry = viewModel::retryTranscription,
+                onSkip = viewModel::skipTranscriptionVerification,
+                onDismiss = viewModel::dismissTranscriptionDialog
+            )
+        }
 
+        // ✅ FIXED: Success Message - No Auto-Navigation
+        successMessage?.let { message ->
             Snackbar(
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier.padding(16.dp),
+                action = {
+                    TextButton(onClick = { viewModel.clearSuccessMessage() }) {
+                        Text("Dismiss")
+                    }
+                }
             ) {
                 Text(message)
             }
@@ -336,6 +437,205 @@ fun TriggerScreen(
             }
         }
     }
+}
+
+/**
+ * Card showing transcription verification results
+ */
+@Composable
+private fun TranscriptionResultCard(
+    keyword: String,
+    matchResult: KeywordMatchResult,
+    transcriptionResult: TranscriptionResult?
+) {
+    val isMatch = matchResult.isMatch
+    val cardColor = if (isMatch) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+
+    val iconColor = if (isMatch) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = if (isMatch) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(20.dp)
+                )
+
+                Text(
+                    text = if (isMatch) "Keyword Verified!" else "Verification Warning",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = iconColor
+                )
+            }
+
+            Text(
+                text = "Expected: \"$keyword\"",
+                style = MaterialTheme.typography.bodySmall,
+                color = iconColor
+            )
+
+            Text(
+                text = "Heard: \"${matchResult.transcribedText}\"",
+                style = MaterialTheme.typography.bodySmall,
+                color = iconColor
+            )
+
+            // Match type and confidence
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Match: ${matchResult.matchType.name.lowercase().replace('_', ' ')}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = iconColor
+                )
+
+                Text(
+                    text = "Confidence: ${(matchResult.confidence * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = iconColor
+                )
+            }
+
+            if (!isMatch) {
+                Text(
+                    text = "⚠️ The transcription doesn't match your keyword. You can still save, but consider re-recording for better accuracy.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = iconColor
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Detailed transcription results dialog
+ */
+@Composable
+private fun TranscriptionDialog(
+    keyword: String,
+    transcriptionResult: TranscriptionResult?,
+    keywordMatchResult: KeywordMatchResult?,
+    onAccept: () -> Unit,
+    onRetry: () -> Unit,
+    onSkip: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.RecordVoiceOver,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text("Voice Transcription")
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "We transcribed your recording:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Text(
+                            text = "Expected: \"$keyword\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Heard: \"${keywordMatchResult?.transcribedText ?: "Unknown"}\"",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        transcriptionResult?.let { result ->
+                            if (result.alternativeTexts.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Alternatives: ${result.alternativeTexts.take(2).joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val isMatch = keywordMatchResult?.isMatch ?: false
+                val matchText = when (keywordMatchResult?.matchType) {
+                    MatchType.EXACT -> "✅ Perfect match!"
+                    MatchType.CONTAINS -> "✅ Keyword found in transcription"
+                    MatchType.FUZZY -> "⚠️ Similar but not exact match"
+                    MatchType.NO_MATCH -> "❌ No match found"
+                    null -> "❌ Transcription failed"
+                }
+
+                Text(
+                    text = matchText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isMatch) Color.Green else MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(onClick = onRetry) {
+                    Text("Retry")
+                }
+
+                if (keywordMatchResult?.isMatch != true) {
+                    TextButton(onClick = onSkip) {
+                        Text("Skip Verification")
+                    }
+                }
+
+                Button(onClick = onAccept) {
+                    Text("Accept")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
